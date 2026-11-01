@@ -100,6 +100,10 @@ class TestWebRTCViewing(unittest.TestCase):
         self.assertTrue("floor(timestamp / 300)" not in review)
         self.assertTrue("RecordedViewingRegistry.background()" in source("App/HorizonApp.swift"))
         self.assertTrue("RecordedViewingRegistry.stopAll()" in source("App/AppModel.swift"))
+        self.assertTrue("nonisolated func playerViewControllerWillStartPictureInPicture" in player)
+        self.assertTrue("Task { @MainActor in RecordedViewingRegistry.retainPiP(self.owner, token: self.token) }" in player)
+        self.assertTrue("ownsPiP(self.owner, token: self.token)" in player)
+        self.assertTrue("player.belongs(to: scopedAPI, cameras: scopedCameras)" in player)
 
     def test_recorded_webrtc_control_contract_is_retired(self):
         core = source("Sources/HorizonCore/RecordedViewing.swift")

@@ -321,21 +321,29 @@ final class RecordedViewingRegistry: ObservableObject {
     static let shared = RecordedViewingRegistry()
     private static let players = NSHashTable<RecordingPlayer>.weakObjects()
     private static var pip: RecordingPlayer?
+    private static var pipToken: UUID?
     private static var cleanups: [ObjectIdentifier: RecordedHTTPWindowManager] = [:]
     private static var cleanupJobs: [ObjectIdentifier: Task<Void, Error>] = [:]
+    private static weak var scopedAPI: HorizonAPI?
+    private static var scopedCameras: Set<String> = []
     @Published private(set) var error: String?
     static func add(_ player: RecordingPlayer) { players.add(player) }
     static func ownsPiP(_ player: RecordingPlayer) -> Bool { pip === player }
-    static func retainPiP(_ player: RecordingPlayer) {
+    static func ownsPiP(_ player: RecordingPlayer, token: UUID) -> Bool { pip === player && pipToken == token }
+    static func retainPiP(_ player: RecordingPlayer, token: UUID) {
+        guard player.belongs(to: scopedAPI, cameras: scopedCameras), player.player.currentItem?.status == .readyToPlay else {
+            player.pictureInPictureFailed(); player.stop(); return
+        }
         if pip !== player { pip?.stop() }
         LivePictureInPictureController.shared.stop()
-        pip = player
+        pip = player; pipToken = token
     }
-    static func releasePiP(_ player: RecordingPlayer) { if pip === player { pip = nil } }
-    static func stopPiP() { let old = pip; pip = nil; old?.stop() }
+    static func releasePiP(_ player: RecordingPlayer) { if pip === player { pip = nil; pipToken = nil } }
+    static func stopPiP() { let old = pip; pip = nil; pipToken = nil; old?.stop() }
     static func stopAll() { for player in players.allObjects { player.stop() } }
     static func background() { for player in players.allObjects where !ownsPiP(player) { player.stop() } }
     static func updateScope(api: HorizonAPI?, cameras: Set<String>) {
+        scopedAPI = api; scopedCameras = cameras
         for player in players.allObjects where !player.belongs(to: api, cameras: cameras) { player.stop() }
     }
     static func clean(_ manager: RecordedHTTPWindowManager) {
@@ -403,24 +411,35 @@ private struct NativeRecordedController: UIViewControllerRepresentable {
     static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
         if !RecordedViewingRegistry.ownsPiP(coordinator.owner) { controller.player = nil }
     }
+    @MainActor
     final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
         let owner: RecordingPlayer
+        let token = UUID()
         init(owner: RecordingPlayer) { self.owner = owner }
-        func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
-            RecordedViewingRegistry.retainPiP(owner)
+        nonisolated func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
+            Task { @MainActor in RecordedViewingRegistry.retainPiP(self.owner, token: self.token) }
         }
-        func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
-            RecordedViewingRegistry.releasePiP(owner)
-            if !owner.inlineAttached { owner.stop() }
+        nonisolated func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
+            Task { @MainActor in
+                guard RecordedViewingRegistry.ownsPiP(self.owner, token: self.token) else { return }
+                RecordedViewingRegistry.releasePiP(self.owner)
+                if !self.owner.inlineAttached { self.owner.stop() }
+            }
         }
-        func playerViewController(_ playerViewController: AVPlayerViewController, failedToStartPictureInPictureWithError error: Error) {
-            RecordedViewingRegistry.releasePiP(owner)
-            owner.pictureInPictureFailed()
-            if !owner.inlineAttached { owner.stop() }
+        nonisolated func playerViewController(_ playerViewController: AVPlayerViewController, failedToStartPictureInPictureWithError error: Error) {
+            Task { @MainActor in
+                guard RecordedViewingRegistry.ownsPiP(self.owner, token: self.token) else { return }
+                RecordedViewingRegistry.releasePiP(self.owner)
+                self.owner.pictureInPictureFailed()
+                if !self.owner.inlineAttached { self.owner.stop() }
+            }
         }
-        func playerViewController(_ playerViewController: AVPlayerViewController,
+        nonisolated func playerViewController(_ playerViewController: AVPlayerViewController,
             restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
-            completionHandler(owner.inlineAttached || owner.restoreInline?() == true)
+            Task { @MainActor in
+                completionHandler(RecordedViewingRegistry.ownsPiP(self.owner, token: self.token)
+                    && (self.owner.inlineAttached || self.owner.restoreInline?() == true))
+            }
         }
     }
 }
