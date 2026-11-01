@@ -38,8 +38,8 @@ recording gaps and recovery details remain in the backend release handoff.
 
 The next TestFlight build **must support opt-in images**. Local source now adds
 a Notification Service Extension (NSE), authenticated image downloading,
-dedicated shared-Keychain state, and dual-profile signing guards. Build 1032
-passed 379 core and 61 CI guard tests, full Release app/NSE compilation and signing,
+dedicated shared-Keychain state, and dual-profile signing guards. Build 1033
+passed 391 core and 66 CI guard tests, full Release app/NSE compilation and signing,
 archive/export/upload. Apple reports valid processing, cleared export compliance
 and internal beta testing; Owner Testing Auto includes the build.
 Actual phone APNs/image delivery remains unverified.
@@ -49,10 +49,10 @@ existing distribution certificate. Both live profiles passed the dual-profile
 validator, and only `NOTIFICATION_SERVICE_PROFILE_BASE64` was added to GitHub.
 The main profile, certificate, upload credentials, and server provider key were
 not replaced. A secure local extension-profile copy was verified against Apple.
-Whole-app/NSE signing and export passed through build 1032.
+Whole-app/NSE signing and export passed through build 1033.
 
 Builds 1017/1018 were explicitly uploaded before backend readiness using
-`allow_pending_image_backend=true`. Builds 1021/1022/1023/1024/1025/1026/1028/1029/1030/1031/1032 used the same explicit
+`allow_pending_image_backend=true`. Builds 1021/1022/1023/1024/1025/1026/1028/1029/1030/1031/1032/1033 used the same explicit
 workflow input after recovery for native connection/live HLS improvements and
 native server settings/notification setup, including the settings navigation fix;
 the image-ready variable remained false. Build 1022 was explicitly requested by
@@ -89,6 +89,12 @@ must not replace that list with local defaults. Settings > Notifications shows
 the server selection and lets the user explicitly save different camera choices.
 No registration or test push was performed while preparing this release.
 Confidence/quiet-hours/health and private-photo policies are not reset.
+Build 1033 additionally avoids re-registration on equivalent API/account
+attachment and waits for an in-flight registration before reading choices after
+auth renewal. This prevents a stale renewal read from undoing a user's explicit
+save. Missing installation metadata is shown as unregistered/unknown rather
+than healthy, and still cannot cause implicit subscription or opt-out.
+No live installation was changed or test notification sent during this work.
 The October 29 image-ready receipt allowed
 `APNS_IMAGES_BACKEND_READY=true`; the October 30 recovery invalidates that
 attestation for the new instance, so the variable is false again. Reverify the

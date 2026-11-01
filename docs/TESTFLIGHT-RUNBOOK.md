@@ -1366,6 +1366,51 @@ provider flags or other agent was touched.
 
 ### Reliable HLS startup and multi-camera tuning
 
+**TestFlight 1033**, source `fbdd96c`,
+[release 41266910268](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41266910268),
+is processed for Owner Testing Auto. Apple build
+`637617d7-608d-4bf0-aab9-c9d3da663504` reports `VALID`,
+`usesNonExemptEncryption=false` and `IN_BETA_TESTING`; automatic group membership
+was independently checked.
+
+Exact final checks:
+
+| Command/check | Result |
+| --- | --- |
+| `swift test` | 391 tests, 0 failures |
+| `python3 -m unittest discover -s tools/tests` | 66 CI guards passed |
+| Generic iOS-device Release compilation | Passed in [qualification 41266635808](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41266635808) |
+| Three concurrent authenticated macOS AVPlayer fixture players | All reached ready and fetched each camera's init/media; total release test duration 1.782 s, not first-frame latency |
+| Per-stage network instrumentation fixture | Passed with 30-ms injected fetch delay and elapsed/first-body assertions >=20 ms; total release test duration 0.464 s, not phone/server latency |
+| Final app/NSE Release compilation/signing, archive, export and upload | All passed on final source |
+| Simulator/UI tests | Not run, per owner instruction |
+| Physical iPhone/production startup, stalls, dropped frames and 4K parts | Not measured; no device/control/log access available |
+
+The unsigned device command was:
+
+```sh
+xcodebuild \
+  -project FrigateHorizon.xcodeproj \
+  -scheme FrigateHorizon \
+  -configuration Release \
+  -destination 'generic/platform=iOS' \
+  -derivedDataPath build/DerivedData \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+Final signing/upload used the existing protected `testflight.yml` workflow and
+`.github/scripts/testflight.sh` with explicit `confirm_upload=true` and
+`allow_pending_image_backend=true`. No environment protection or profile/NSE
+requirement was weakened. `APNS_IMAGES_BACKEND_READY=false` and its
+`2026-10-30T05:27:40Z` timestamp are unchanged. No server setting, camera,
+recording, storage/provider configuration, live device registration or test
+notification was changed by this source task; the server agent was not contacted.
+
+No confirmed server packaging defect was diagnosed. Native-iPhone tolerance of
+changing 4K part durations remains a physical-device/packager qualification
+blocker. The changing-target fixture only proves that the client preserves and
+records the evidence; it does not qualify iPhone decoding or playback.
+
 The current tuning prioritizes a fast first displayed frame followed by stable
 buffering, not minimum live latency. AVPlayer starts without its automatic
 stall-wait gate, then enables that gate after decoded video appears. Requested
