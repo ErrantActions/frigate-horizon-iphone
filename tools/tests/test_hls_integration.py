@@ -7,6 +7,12 @@ def source(path):
     return (ROOT / path).read_text(encoding="utf-8")
 
 class TestHLSIntegration(unittest.TestCase):
+    def test_api_cookie_bridge_does_not_drop_api_scoped_sessions_at_server_root(self):
+        api = source("App/Networking/HorizonAPI.swift")
+        self.assertIn("SavedSession.cookiesForMedia", api)
+        self.assertNotIn("cookies(for: address.url)", api)
+        self.assertIn("SavedCookie($0).restore(for: address)", source("Sources/HorizonCore/SavedSession.swift"))
+
     def test_viewing_has_no_legacy_players_or_transport_fallback(self):
         for name in ["LiveStream.swift", "HTTPSLiveStream.swift", "LivePiPVideoRenderer.swift"]:
             self.assertFalse((ROOT / "App/Media" / name).exists())

@@ -12,6 +12,11 @@ public struct SavedSession: Codable, Equatable, Sendable {
         self.cookies = cookies
     }
 
+    public static func cookiesForMedia(_ cookies: [HTTPCookie], address: ServerAddress) -> [HTTPCookie] {
+        // Retain original cookie paths; the receiving private jar selects them for each child URL.
+        cookies.filter { SavedCookie($0).restore(for: address) != nil }
+    }
+
     public struct SavedCookie: Codable, Equatable, Sendable {
         public let name: String
         public let value: String

@@ -41,7 +41,7 @@ final class HorizonAPI {
     }
 
     var cookies: [HTTPCookie] {
-        session.configuration.httpCookieStorage?.cookies(for: address.url) ?? []
+        SavedSession.cookiesForMedia(session.configuration.httpCookieStorage?.cookies ?? [], address: address)
     }
 
     func close() { session.invalidateAndCancel() }

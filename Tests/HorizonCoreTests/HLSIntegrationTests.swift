@@ -2,6 +2,30 @@ import XCTest
 @testable import HorizonCore
 
 final class HLSIntegrationTests: XCTestCase {
+    func testCookieBridgeIncludesAPIPathsWithoutWideningPathsOrDomains() throws {
+        let address = try ServerAddress("https://dvr.invalid")
+        let cookie = try XCTUnwrap(HTTPCookie(properties: [
+            .name: "frigate_token", .value: "synthetic-only", .domain: "dvr.invalid",
+            .path: "/api", .secure: "TRUE",
+        ]))
+        let foreign = try XCTUnwrap(HTTPCookie(properties: [
+            .name: "foreign", .value: "not-forwarded", .domain: "other.invalid", .path: "/",
+        ]))
+        let selected = SavedSession.cookiesForMedia([cookie, foreign], address: address)
+        XCTAssertEqual(selected.count, 1)
+        XCTAssertEqual(selected.first?.path, "/api")
+        XCTAssertTrue(selected.first?.isSecure == true)
+        let jar = try XCTUnwrap(URLSessionConfiguration.ephemeral.httpCookieStorage)
+        selected.forEach { jar.setCookie($0) }
+        XCTAssertTrue(jar.cookies(for: address.endpoint(["api", "Backyard", "live", "hls", "720p", "part.mp4"]))?.contains {
+            $0.name == "frigate_token"
+        } == true)
+        XCTAssertFalse(jar.cookies(for: address.endpoint(["vod", "event", "id", "index.m3u8"]))?.contains {
+            $0.name == "frigate_token"
+        } == true)
+        for value in jar.cookies ?? [] { jar.deleteCookie(value) }
+    }
+
     private func status() throws -> LiveHLSStatus {
         try JSONDecoder().decode(LiveHLSStatus.self, from: Data("""
         {"version":1,"protocol":"ll-hls","enabled":true,"available":true,

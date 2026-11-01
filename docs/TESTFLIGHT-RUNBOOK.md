@@ -1267,6 +1267,11 @@ It translates local Range/HEAD demands from complete authenticated origin GETs,
 without requiring live 206/HEAD support. VOD types/routes are validated
 independently. No undocumented AVFoundation header key, credential-bearing URL,
 TLS exception, SNI override or direct camera/packager address is used.
+The app's cookie bridge retains same-host API-path-scoped cookies as well as root
+cookies instead of looking up only the server-root path. Original domain/path/
+secure/expiry attributes are not broadened. An API-only cookie consequently
+cannot authenticate `/vod/`; that requires the supported login to issue a cookie
+scoped for VOD too, and is not worked around by rewriting the cookie path.
 
 401 presents the shared sign-in flow without refresh storms; 403 stops with
 camera-denial guidance. A rotated 404 rebuilds from status/master once, never an
