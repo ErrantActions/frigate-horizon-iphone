@@ -492,7 +492,7 @@ struct LiveVideoView: View {
             else { reflection?.clearSource() }
         }
         .onReceive(hlsLive.$advertisedHeights) { heights in onHLSHeightsChanged?(heights) }
-        .task(id: "\(ObjectIdentifier(api))-\(camera.id)-\(playbackEnabled)-\(maximumQualityHeight ?? 0)-\(exactHLSHeight ?? 0)-\(network.restricted)-\(expandedQuality)-\(active)-\(visible)-\(scenePhase == .active)-\(retry)-\(pictureInPicture.scopeRevision)") {
+        .task(id: "\(ObjectIdentifier(api))-\(camera.id)-\(playbackEnabled)-\(maximumQualityHeight ?? 0)-\(exactHLSHeight ?? 0)-\(network.restricted)-\(expandedQuality)-\(active)-\(visible)-\(scenePhase == .active)-\(retry)-\(muted)-\(pictureInPicture.scopeRevision)") {
             attachment.adoptRetainedSession(
                 api: api, cameraID: camera.id, stream: effectiveStream, transport: transport,
                 enabled: showsPiPControl, viewer: viewer

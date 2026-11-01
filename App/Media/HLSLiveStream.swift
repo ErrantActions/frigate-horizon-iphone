@@ -181,6 +181,11 @@ final class HLSLiveStream: ObservableObject {
                                 decodedVideo: self.resolution != nil, bufferedAhead: ahead,
                                 playing: playing && !item.isPlaybackBufferEmpty,
                                 restrictedNetwork: LiveNetworkConditions.shared.restricted)
+                            if LiveNetworkConditions.shared.restricted,
+                               master.variants.allSatisfy({ $0.height > 720 }) {
+                                self.fail("This pinned rendition exceeds Low Data Mode. Choose Auto or an advertised rung at or below 720p.")
+                                return
+                            }
                             if let cap = self.startupPolicy?.preferredPeakBitRate { item.preferredPeakBitRate = cap }
                             if self.resolution != nil {
                                 self.status = self.recoveringEdge ? "Recovering live edge" :

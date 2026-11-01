@@ -1288,6 +1288,14 @@ Confidence policy, quiet-hours/health preferences and private-photo opt-in are
 not reset. No current device registration was read or written during this
 source task, and no notification test was sent.
 
+Recorded-media PiP retains the owning HLS asset until PiP ends; offscreen
+non-PiP assets stop. Camera-SD playback deliberately has no background PiP:
+leaving closes the server session as required, and closure failures surface at
+the app level. A mute change updates the retained live selection without
+restarting the player. If Low Data Mode becomes active during a pinned 4K PiP
+session with no low rung, playback stops with explicit quality guidance rather
+than ignoring the data cap.
+
 Real-iPhone acceptance remains required: cold start/audio sync, actual decoded
 720/1080/4K, Auto under throttling, idle/resume, PiP, grid resource shutdown,
 local/remote recordings and camera-SD closure. In particular, changing native-4K

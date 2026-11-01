@@ -176,12 +176,13 @@ extension Notification.Name {
 
 struct NativeRecordingSurface: UIViewControllerRepresentable {
     let player: AVPlayer
+    var allowsPiP = true
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
-        controller.allowsPictureInPicturePlayback = true
-        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        controller.allowsPictureInPicturePlayback = allowsPiP
+        controller.canStartPictureInPictureAutomaticallyFromInline = allowsPiP
         controller.delegate = context.coordinator
         context.coordinator.player = player
         return controller

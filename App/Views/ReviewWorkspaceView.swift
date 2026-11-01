@@ -132,6 +132,12 @@ final class ReviewPlaybackStore: ObservableObject {
         clipGeneration = UUID()
         playback.stop()
     }
+
+    func leave() {
+        generation = UUID()
+        clipGeneration = UUID()
+        playback.releaseInline()
+    }
 }
 
 struct ReviewWorkspaceView: View {
@@ -257,7 +263,7 @@ struct ReviewWorkspaceView: View {
                 timestamp = value
             }
             .onReceive(store.playback.player.publisher(for: \.timeControlStatus)) { playing = $0 != .paused }
-            .onDisappear { store.stop() }
+            .onDisappear { store.leave() }
             .sheet(isPresented: $showExport) {
                 CreateExportView(api: api, initialCamera: camera,
                     initialStart: Date(timeIntervalSince1970: max(day.timeIntervalSince1970, timestamp - 30)),

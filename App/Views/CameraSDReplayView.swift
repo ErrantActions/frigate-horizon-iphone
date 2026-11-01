@@ -98,7 +98,7 @@ struct CameraSDReplayView: View {
     var body: some View {
         Form {
             if let url = owner.mediaURL {
-                NativeRecordingSurface(player: player.player).frame(minHeight: 220)
+                NativeRecordingSurface(player: player.player, allowsPiP: false).frame(minHeight: 220)
                     .task(id: url) { player.open(url: url, api: api) }
                 Button("Close replay") { player.stop(); owner.close() }
             } else {
