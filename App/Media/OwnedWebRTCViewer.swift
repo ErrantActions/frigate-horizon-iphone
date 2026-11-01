@@ -71,6 +71,7 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
     var muted = true { didSet { audioTrack?.isEnabled = !muted && configuration?.audio == true } }
     private static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
+        RTCSetMinDebugLogLevel(.none)
         return RTCPeerConnectionFactory(encoderFactory: RTCDefaultVideoEncoderFactory(),
             decoderFactory: RTCDefaultVideoDecoderFactory())
     }()

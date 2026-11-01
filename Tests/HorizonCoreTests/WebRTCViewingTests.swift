@@ -2,6 +2,16 @@ import XCTest
 @testable import HorizonCore
 
 final class WebRTCViewingTests: XCTestCase {
+    func testUnavailableDiscoveryDoesNotRequireUsableSessionMetadata() throws {
+        let features = try JSONDecoder().decode(ViewingFeatures.self,
+            from: Data(#"{"live_webrtc":{"version":1,"enabled":false,"available":false}}"#.utf8))
+        do { _ = try features.requireLive(); XCTFail("Disabled viewing must fail") }
+        catch { XCTAssertEqual(error.localizedDescription, ViewingMessage.unavailable) }
+        let status = try JSONDecoder().decode(LiveWebRTCStatus.self,
+            from: Data(#"{"version":1,"protocol":"webrtc","enabled":true,"available":false}"#.utf8))
+        do { try status.validate(policy: policy()); XCTFail("Unavailable status must fail") }
+        catch { XCTAssertEqual(error.localizedDescription, ViewingMessage.unavailable) }
+    }
     private let id = UUID(uuidString: "00000000-0000-4000-8000-000000000001")!
     private func policy(_ camera: String = "front") throws -> ViewerResourcePolicy {
         try ViewerResourcePolicy(address: ServerAddress("https://dvr.invalid/proxy"), camera: camera)

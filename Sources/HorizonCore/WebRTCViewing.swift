@@ -18,13 +18,15 @@ public struct ViewingFeatures: Decodable, Sendable {
     public let liveWebRTC: LiveWebRTCFeature?
     enum CodingKeys: String, CodingKey { case liveWebRTC = "live_webrtc" }
     public func requireLive() throws -> LiveWebRTCFeature {
-        guard let feature = liveWebRTC, feature.version == 1,
-              feature.signaling == "frigate-rest-offer-answer-v1", feature.onDemand,
+        guard let feature = liveWebRTC, feature.version == 1 else {
+            throw HorizonError.message(ViewingMessage.upgrade)
+        }
+        guard feature.enabled, feature.available else { throw HorizonError.message(ViewingMessage.unavailable) }
+        guard feature.signaling == "frigate-rest-offer-answer-v1", feature.onDemand,
               feature.recordings == "original_source",
               feature.statusTemplate == "{camera_name}/live/webrtc/status" else {
             throw HorizonError.message(ViewingMessage.upgrade)
         }
-        guard feature.enabled, feature.available else { throw HorizonError.message(ViewingMessage.unavailable) }
         return feature
     }
 }
@@ -40,6 +42,16 @@ public struct LiveWebRTCFeature: Decodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case version, enabled, available, signaling, recordings
         case statusTemplate = "status_url_template"; case onDemand = "on_demand"
+    }
+    public init(from decoder: Decoder) throws {
+        let value = try decoder.container(keyedBy: CodingKeys.self)
+        version = try value.decode(Int.self, forKey: .version)
+        enabled = try value.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        available = try value.decodeIfPresent(Bool.self, forKey: .available) ?? false
+        statusTemplate = try value.decodeIfPresent(String.self, forKey: .statusTemplate) ?? ""
+        signaling = try value.decodeIfPresent(String.self, forKey: .signaling) ?? ""
+        onDemand = try value.decodeIfPresent(Bool.self, forKey: .onDemand) ?? false
+        recordings = try value.decodeIfPresent(String.self, forKey: .recordings) ?? ""
     }
 }
 
@@ -66,6 +78,18 @@ public struct LiveWebRTCStatus: Decodable, Sendable {
         case protocolName = "protocol"; case sessionURL = "session_url"
         case gridHeight = "grid_height"; case gridRendition = "grid_rendition"
         case relayAvailable = "relay_available"
+    }
+    public init(from decoder: Decoder) throws {
+        let value = try decoder.container(keyedBy: CodingKeys.self)
+        version = try value.decode(Int.self, forKey: .version)
+        protocolName = try value.decodeIfPresent(String.self, forKey: .protocolName) ?? ""
+        enabled = try value.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        available = try value.decodeIfPresent(Bool.self, forKey: .available) ?? false
+        sessionURL = try value.decodeIfPresent(String.self, forKey: .sessionURL) ?? ""
+        gridHeight = try value.decodeIfPresent(Int.self, forKey: .gridHeight) ?? 0
+        gridRendition = try value.decodeIfPresent(ViewingRendition.self, forKey: .gridRendition) ?? .init(height: 0, bitrate: 0)
+        relayAvailable = try value.decodeIfPresent(Bool.self, forKey: .relayAvailable) ?? false
+        renditions = try value.decodeIfPresent([ViewingRendition].self, forKey: .renditions) ?? []
     }
     public func validate(policy: ViewerResourcePolicy) throws {
         guard version == 1, protocolName == "webrtc" else { throw HorizonError.message(ViewingMessage.upgrade) }
