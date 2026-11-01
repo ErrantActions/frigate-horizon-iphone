@@ -1406,6 +1406,8 @@ Diagnostic publications are throttled to once per second except first-frame/
 failure milestones, avoiding unnecessary grid redraws.
 Unavailable access/error logs or invalid bitrate samples are reported as
 **not observed**, never substituted with zero stalls or dropped frames.
+Use **long-press tile > Share playback metrics** for grid diagnostics, or the
+full-camera **Playback metrics** control after a frame or error appears.
 
 Notification attachment on an equivalent API/account updates authorization for
 private images without re-registering or resetting camera drafts. Auth renewal

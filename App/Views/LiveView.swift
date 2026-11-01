@@ -431,6 +431,9 @@ struct LiveVideoView: View {
         }
         .contextMenu {
             Button("Reconnect", systemImage: "arrow.clockwise") { reconnect() }
+            ShareLink(item: hlsLive.metrics) {
+                Label("Share playback metrics", systemImage: "waveform.path.ecg")
+            }
             if let favoriteAction {
                 Button(isFavorite ? "Remove from favorites" : "Add to favorites",
                     systemImage: isFavorite ? "star.slash" : "star") { favoriteAction() }

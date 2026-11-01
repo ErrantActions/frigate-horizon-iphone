@@ -14,6 +14,7 @@ class TestHLSStartup(unittest.TestCase):
         self.assertNotIn('"HLS ABR"', live)
         self.assertNotIn("Int(resolution.width)", live)
         self.assertIn('Picker("Quality"', live)
+        self.assertIn("Share playback metrics", live)
 
     def test_recovery_is_bounded_staggered_cancellable_and_reuses_equivalent_requests(self):
         session = source("App/Media/LivePlaybackSession.swift")
