@@ -303,33 +303,6 @@ public struct ViewerLeaseState: Sendable {
             throw HorizonError.message(ViewingMessage.expired)
         }
 
-        public struct ViewerOwnershipState: Sendable {
-            public private(set) var generation = UUID()
-            public private(set) var activeID: UUID?
-            public init() {}
-            public mutating func invalidate() { generation = UUID(); activeID = nil }
-            public mutating func acceptCreated(_ id: UUID, generation: UUID) -> Bool {
-                guard self.generation == generation else { return false }
-                activeID = id
-                return true
-            }
-        }
-
-        public func viewingFailureMessage(_ error: Error) -> String {
-            switch (error as? HorizonError)?.httpStatusCode {
-            case 401: return String(localized: "viewer.auth", defaultValue: "Sign in again to renew this account's viewing session.")
-            case 403: return String(localized: "viewer.denied", defaultValue: "Camera access was denied. Refresh permissions or choose another camera.")
-            case 404: return String(localized: "viewer.missing", defaultValue: "The owned viewer or requested quality is no longer available. Refresh and retry.")
-            case 409: return String(localized: "viewer.conflict", defaultValue: "The viewing session is in a conflicting negotiation state. Reconnect.")
-            case 410: return ViewingMessage.expired
-            case 422: return String(localized: "viewer.payload", defaultValue: "The server rejected the viewing request. Update the app/server contract.")
-            case 429: return String(localized: "viewer.capacity", defaultValue: "The server's shared viewing/encoder capacity is in use. Close another viewer before retrying.")
-            case 503: return ViewingMessage.unavailable
-            default:
-                if let failure = error as? HorizonError, case .message(let message) = failure { return message }
-                return ViewingMessage.failed
-            }
-        }
         self.id = id; self.expiresAt = expiresAt; self.interval = interval
     }
     public mutating func renew(_ value: ViewerHeartbeat, now: Double) throws {
@@ -339,4 +312,32 @@ public struct ViewerLeaseState: Sendable {
         try accept(id: id, expiresAt: value.expiresAt, interval: value.heartbeatSeconds ?? interval, now: now)
     }
     public func isValid(now: Double) -> Bool { id != nil && now.isFinite && now < expiresAt }
+}
+
+public struct ViewerOwnershipState: Sendable {
+    public private(set) var generation = UUID()
+    public private(set) var activeID: UUID?
+    public init() {}
+    public mutating func invalidate() { generation = UUID(); activeID = nil }
+    public mutating func acceptCreated(_ id: UUID, generation: UUID) -> Bool {
+        guard self.generation == generation else { return false }
+        activeID = id
+        return true
+    }
+}
+
+public func viewingFailureMessage(_ error: Error) -> String {
+    switch (error as? HorizonError)?.httpStatusCode {
+    case 401: return String(localized: "viewer.auth", defaultValue: "Sign in again to renew this account's viewing session.")
+    case 403: return String(localized: "viewer.denied", defaultValue: "Camera access was denied. Refresh permissions or choose another camera.")
+    case 404: return String(localized: "viewer.missing", defaultValue: "The owned viewer or requested quality is no longer available. Refresh and retry.")
+    case 409: return String(localized: "viewer.conflict", defaultValue: "The viewing session is in a conflicting negotiation state. Reconnect.")
+    case 410: return ViewingMessage.expired
+    case 422: return String(localized: "viewer.payload", defaultValue: "The server rejected the viewing request. Update the app/server contract.")
+    case 429: return String(localized: "viewer.capacity", defaultValue: "The server's shared viewing/encoder capacity is in use. Close another viewer before retrying.")
+    case 503: return ViewingMessage.unavailable
+    default:
+        if let failure = error as? HorizonError, case .message(let message) = failure { return message }
+        return ViewingMessage.failed
+    }
 }
