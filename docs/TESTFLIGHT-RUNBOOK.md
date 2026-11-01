@@ -1233,6 +1233,55 @@ acceptance remain separate.
 
 ### HLS-only viewing integration (current behavior)
 
+**Final delivery: TestFlight 1032**, source `acaff67`,
+[run 41258930204](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41258930204).
+Apple build `49b969d4-fd57-42f1-82b9-1981c4a3ad5e` reports `VALID`,
+`usesNonExemptEncryption=false` and `IN_BETA_TESTING`; Owner Testing Auto contains
+it. This supersedes intermediate uploads 1030 (initial integration) and 1031
+(API-path cookie bridge) with native scroll-visibility shutdown for grid tiles.
+Those uploads succeeded; they are not described as canceled or device-qualified.
+
+Final validation:
+
+| Command/check on GitHub macOS runners | Result |
+| --- | --- |
+| `python3 -m unittest discover -s tools/tests` | 61 CI guards passed |
+| `swift test` | 379 tests, 0 failures |
+| `testRealAVPlayerLoadsAuthenticatedFixtureInitAndSegment` | Passed in 0.715 s in the release run; fixture duration is not iPhone startup latency |
+| Generic iOS-device Release compilation | Passed in [qualification 41258707881](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41258707881) |
+| Protected TestFlight workflow: app/NSE Release compilation/signing, archive, export, upload | All passed on final source |
+| Simulator/UI tests | Not run, per owner instruction |
+| Physical-iPhone and production-server playback | Not performed; acceptance remains blocked on device/log access |
+
+The unsigned device command was:
+
+```sh
+xcodebuild \
+  -project FrigateHorizon.xcodeproj \
+  -scheme FrigateHorizon \
+  -configuration Release \
+  -destination 'generic/platform=iOS' \
+  -derivedDataPath build/DerivedData \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+The signed release used the unchanged protected `testflight.yml` workflow and
+its existing `.github/scripts/testflight.sh`, with explicit
+`confirm_upload=true` and `allow_pending_image_backend=true`.
+`APNS_IMAGES_BACKEND_READY=false` and its `2026-10-30T05:27:40Z` timestamp are
+unchanged. No release protection, profile validator or NSE requirement was
+removed. Early qualification runs caught async declaration and AVKit actor
+scope errors; they were corrected before successful native/signing checks.
+The API-cookie and per-resource auth regressions are discovered XCTest methods,
+not nested unused helpers.
+
+No confirmed server-contract defect was diagnosed. Remaining contract/device
+qualification includes native 4K's changing `PART-TARGET`, authenticated VOD/
+SD availability and supported login cookie scope; an API-only cookie cannot be
+broadened to make VOD work. No real iPhone was available to collect the required
+4K playlists, physical playback metrics or native error/access logs. Do not
+label this missing acceptance evidence as an authentication or packager fault.
+
 This supersedes the earlier optional/explicit HLS transport sections. All live
 viewing now uses AVPlayer HLS regardless of saved WebRTC/compatibility choices
 or legacy `ui.live_hls` flags. No MSE/WebRTC/JSMpeg viewing player or transport
