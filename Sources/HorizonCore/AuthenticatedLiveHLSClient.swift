@@ -75,8 +75,6 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
         let limit: Int
     }
     private var pending: [Int: Pending] = [:]
-    private var primedMaster: Data?
-    private var primedUntil = Date.distantPast
 
     public init(policy: LiveHLSResourcePolicy, cookies: [HTTPCookie], maximumHeight: Int? = nil,
                 configuration: URLSessionConfiguration = .ephemeral, masterURL: URL? = nil) {
@@ -101,8 +99,6 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
         guard let text = String(data: data, encoding: .utf8) else { throw HorizonError.unexpectedResponse }
         let master = try LiveHLSMaster(text: text, policy: policy, url: masterURL,
             maximumHeight: maximumHeight)
-        let rewritten = Data(try policy.rewritePlaylist(master.playlist, url: masterURL).utf8)
-        storePrimedMaster(rewritten)
         return master
     }
 
@@ -142,19 +138,6 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
             cancellation.bind(task)
             task.resume()
         }
-    }
-
-    private func storePrimedMaster(_ data: Data) {
-        lock.lock()
-        primedMaster = data
-        primedUntil = Date().addingTimeInterval(10)
-        lock.unlock()
-    }
-
-    private func readPrimedMaster() -> Data? {
-        lock.lock()
-        defer { lock.unlock() }
-        return !closed && Date() < primedUntil ? primedMaster : nil
     }
 
     private func request(_ url: URL) async throws -> (Data, HTTPURLResponse) {
@@ -197,7 +180,6 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
         closed = true
         let cancelled = Array(pending.values)
         pending.removeAll()
-        primedMaster = nil
         lock.unlock()
         session.invalidateAndCancel()
         for record in cancelled {

@@ -18,12 +18,15 @@ final class RecordingPlayer: ObservableObject {
     private var source: AuthenticatedLiveHLSAsset?
     private var loadGeneration = UUID()
     private var backgroundObserver: NSObjectProtocol?
+    private(set) var hasInlineOwner = true
 
     func open(url: URL, api: HorizonAPI, initialPosition: Double = 0, autoplay: Bool = true, recoveries: Int = 0) {
         stop()
         loading = true
         error = nil
         self.initialPosition = initialPosition
+        hasInlineOwner = true
+        HLSBackgroundOwnership.known[ObjectIdentifier(player)] = WeakRecordingOwner(self)
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
             try AVAudioSession.sharedInstance().setActive(true)
@@ -65,6 +68,8 @@ final class RecordingPlayer: ObservableObject {
                     case .failed:
                         self.loading = false
                         self.error = item.error?.localizedDescription ?? "Recording playback failed."
+                        self.source?.close()
+                        self.source = nil
                     default: break
                     }
                 }
@@ -109,6 +114,10 @@ final class RecordingPlayer: ObservableObject {
     }
 
     func stop() {
+        HLSBackgroundOwnership.known.removeValue(forKey: ObjectIdentifier(player))
+        HLSBackgroundOwnership.retained.removeValue(forKey: ObjectIdentifier(player))
+        HLSBackgroundOwnership.players.remove(ObjectIdentifier(player))
+        HLSBackgroundOwnership.delegates.removeValue(forKey: ObjectIdentifier(player))
         loadGeneration = UUID()
         opening?.cancel()
         opening = nil
@@ -129,6 +138,11 @@ final class RecordingPlayer: ObservableObject {
         failureObserver = nil
         player.replaceCurrentItem(with: nil)
         position = 0
+    }
+
+    func releaseInline() {
+        hasInlineOwner = false
+        if !HLSBackgroundOwnership.players.contains(ObjectIdentifier(player)) { stop() }
     }
 
     func seek(to position: Double, autoplay: Bool? = nil) {
@@ -178,23 +192,56 @@ struct NativeRecordingSurface: UIViewControllerRepresentable {
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+    @MainActor final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
         weak var player: AVPlayer?
-        func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
-            if let player { HLSBackgroundOwnership.players.insert(ObjectIdentifier(player)) }
+        nonisolated func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
+            Task { @MainActor [weak self] in
+                if let self, let player = self.player { HLSBackgroundOwnership.begin(player, delegate: self) }
+            }
         }
-        func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
-            if let player { HLSBackgroundOwnership.players.remove(ObjectIdentifier(player)) }
+        nonisolated func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
+            Task { @MainActor [weak self] in
+                if let player = self?.player { HLSBackgroundOwnership.end(player) }
+            }
         }
-        func playerViewController(_ playerViewController: AVPlayerViewController,
+        nonisolated func playerViewController(_ playerViewController: AVPlayerViewController,
                                   failedToStartPictureInPictureWithError error: Error) {
-            if let player { HLSBackgroundOwnership.players.remove(ObjectIdentifier(player)) }
+            Task { @MainActor [weak self] in
+                if let player = self?.player { HLSBackgroundOwnership.end(player) }
+            }
         }
     }
 }
 
 @MainActor
-enum HLSBackgroundOwnership { static var players: Set<ObjectIdentifier> = [] }
+enum HLSBackgroundOwnership {
+    static var players: Set<ObjectIdentifier> = []
+    static var known: [ObjectIdentifier: WeakRecordingOwner] = [:]
+    static var retained: [ObjectIdentifier: RecordingPlayer] = [:]
+    static var delegates: [ObjectIdentifier: NativeRecordingSurface.Coordinator] = [:]
+    static func begin(_ player: AVPlayer, delegate: NativeRecordingSurface.Coordinator) {
+        let id = ObjectIdentifier(player)
+        players.insert(id)
+        delegates[id] = delegate
+        retained[id] = known[id]?.value
+    }
+    static func end(_ player: AVPlayer) {
+        let id = ObjectIdentifier(player)
+        players.remove(id)
+        delegates.removeValue(forKey: id)
+        let owner = retained.removeValue(forKey: id)
+        if owner?.hasInlineOwner == false { owner?.stop() }
+    }
+    static func stopAll() {
+        let owners = known.values.compactMap(\.value)
+        for owner in owners { owner.stop() }
+    }
+}
+@MainActor
+final class WeakRecordingOwner {
+    weak var value: RecordingPlayer?
+    init(_ value: RecordingPlayer) { self.value = value }
+}
 struct RecordingPlaybackView: View {
     let api: HorizonAPI
     let camera: String
@@ -248,7 +295,7 @@ struct RecordingPlaybackView: View {
         .fullScreenCover(isPresented: $expanded) {
             FoldedRecordingView(player: playback.player, start: start)
         }
-        .onDisappear { if !expanded { playback.stop() } }
+        .onDisappear { if !expanded { playback.releaseInline() } }
     }
 
     @State private var addressError: String?

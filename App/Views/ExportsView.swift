@@ -403,7 +403,7 @@ private struct ExportPlayerView: View {
             .task {
                 playback.open(url: api.address.endpoint(["vod", "export", item.id, "index.m3u8"]), api: api)
             }
-            .onDisappear { playback.stop() }
+            .onDisappear { playback.releaseInline() }
         }
     }
 }

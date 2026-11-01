@@ -223,11 +223,6 @@ public struct LiveHLSResourcePolicy: Sendable {
             throw HorizonError.invalidMediaPath
         }
         let safe = try validate(url)
-        if isLive, base.pathExtension.lowercased() == "m3u8", base.path != canonicalMaster.path,
-           let base = try? validate(base),
-           safe.deletingLastPathComponent().path != base.deletingLastPathComponent().path {
-            throw HorizonError.invalidMediaPath
-        }
         return safe
     }
 

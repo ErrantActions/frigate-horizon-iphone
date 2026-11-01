@@ -62,8 +62,14 @@ final class AuthenticatedLiveHLSTests: XCTestCase {
             XCTAssertTrue(request.value(forHTTPHeaderField: "Cookie")?.contains("synthetic-session") == true)
             return (200, ["Content-Type": "video/mp4"], Data([1, 2, 3, 4]))
         }
+        for path in ["720p/init.mp4", "720p/part-1.mp4", "720p/audio-part-1.mp4"] {
+            let url = try policy.resolve(path, relativeTo: policy.canonicalMaster)
+            let resource = try await client.load(url)
+            XCTAssertEqual(resource.data, Data([1, 2, 3, 4]))
+        }
+    }
 
-        func testEveryPlaylistAndMediaResourceReauthenticatesWithoutSharedCache() async throws {
+    func testEveryPlaylistAndMediaResourceReauthenticatesWithoutSharedCache() async throws {
             var calls = 0
             HLSFixtureProtocol.handler = { request in
                 calls += 1
@@ -80,7 +86,7 @@ final class AuthenticatedLiveHLSTests: XCTestCase {
             XCTAssertEqual(calls, 6)
         }
 
-        func testAChild403DoesNotTriggerSignInAndAChild404IsNotRetriedByLoader() async throws {
+    func testAChild403DoesNotTriggerSignInAndAChild404IsNotRetriedByLoader() async throws {
             for code in [401, 403, 404] {
                 var calls = 0
                 HLSFixtureProtocol.handler = { _ in
@@ -97,13 +103,6 @@ final class AuthenticatedLiveHLSTests: XCTestCase {
                 XCTAssertEqual(calls, 1)
             }
         }
-        for path in ["720p/init.mp4", "720p/part-1.mp4", "720p/audio-part-1.mp4"] {
-            let url = try policy.resolve(path, relativeTo: policy.canonicalMaster)
-            let resource = try await client.load(url)
-            XCTAssertEqual(resource.data, Data([1, 2, 3, 4]))
-        }
-    }
-
     func testAuthenticationExpiryIsExplicitAndNeverRetried() async throws {
         var calls = 0
         HLSFixtureProtocol.handler = { _ in

@@ -42,6 +42,19 @@ class TestHLSIntegration(unittest.TestCase):
             self.assertIn("source?.close()", source(file))
         self.assertIn("model.reportSessionExpiry(from: api)", source("App/HorizonApp.swift"))
         self.assertIn("!isConnecting", source("App/AppModel.swift"))
+        recording = source("App/Media/RecordingPlayer.swift")
+        self.assertIn("HLSBackgroundOwnership", recording)
+        self.assertIn("retained[id] = known[id]?.value", recording)
+        self.assertIn("releaseInline()", recording)
+
+    def test_auth_resource_cases_are_actual_xctest_methods_not_nested_helpers(self):
+        tests = source("Tests/HorizonCoreTests/AuthenticatedLiveHLSTests.swift")
+        for name in [
+            "testEveryPlaylistAndMediaResourceReauthenticatesWithoutSharedCache",
+            "testAChild403DoesNotTriggerSignInAndAChild404IsNotRetriedByLoader",
+        ]:
+            self.assertIn("\n    func " + name, tests)
+            self.assertNotIn("\n        func " + name, tests)
 
     def test_push_renewal_fetches_actual_camera_ids_and_explicit_empty_is_not_filtered(self):
         push = source("App/Notifications/NativePushController.swift")

@@ -191,7 +191,7 @@ struct CameraTourView: View {
                             active: foreground, muted: true,
                             onVideoReady: { ready in receivedReadiness(ready, slotID: slot.id) },
                             onPlaybackFailure: { error in receivedFailure(error, slotID: slot.id) },
-                            fillVideo: fillVideo, showsVideoHUD: false)
+                            fillVideo: fillVideo, showsVideoHUD: false, expandedQuality: true)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                             .zIndex(slot.id == playback.current?.id ? 1 : 0)

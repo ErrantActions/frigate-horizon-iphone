@@ -222,7 +222,7 @@ final class HLSLiveStream: ObservableObject {
         let access = player.currentItem?.accessLog()?.events.last
         metrics = "First decoded frame: \((firstFrame ?? 0).formatted(.number.precision(.fractionLength(2)))) s; " +
             "resolutions: \(transitions.joined(separator: " > ")); " +
-            "observed bps: \(Int(access?.observedBitrate ?? 0)); indicated bps: \(Int(access?.indicatedBitrate ?? 0)); " +
+            "observed bps: \((access?.observedBitrate ?? 0).formatted()); indicated bps: \((access?.indicatedBitrate ?? 0).formatted()); " +
             "stalls: \(access?.numberOfStalls ?? 0)"
         startup?.cancel()
         startup = nil

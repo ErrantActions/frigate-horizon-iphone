@@ -177,7 +177,7 @@ final class LiveHLSTests: XCTestCase {
         }
         let child = try policy.resolve("720p/arbitrary-track.m3u8", relativeTo: master)
         XCTAssertNoThrow(try policy.resolve("another-track-17.mp4", relativeTo: child))
-        XCTAssertThrowsError(try policy.resolve("../1080p/primary.m3u8", relativeTo: child))
+        XCTAssertNoThrow(try policy.resolve("../1080p/primary.m3u8", relativeTo: child))
     }
 
     func testLLHLSReloadQueryAllowlistIsBoundedAndDuplicateFree() throws {

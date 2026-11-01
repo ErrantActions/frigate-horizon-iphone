@@ -40,6 +40,7 @@ struct HorizonApp: App {
                 }
                 if mediaAccount != account {
                     LivePictureInPictureController.shared.stop()
+                    HLSBackgroundOwnership.stopAll()
                     mediaAccount = account
                 }
                 if let api = model.api {

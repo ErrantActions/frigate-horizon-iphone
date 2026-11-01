@@ -63,8 +63,10 @@ final class SDReplayOwner: ObservableObject {
         guard let path, let api = client else { return }
         self.path = nil
         client = nil
+        busy = true
         // Retain the authenticated old client until its one cleanup request finishes.
         closing = Task { [self] in
+            defer { busy = false }
             do {
                 struct Closed: Decodable { let state: String }
                 let result: Closed = try await api.send(path, method: "DELETE", body: [String: String]())
