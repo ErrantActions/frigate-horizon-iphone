@@ -135,4 +135,61 @@ bounded loading. Native macOS AVFoundation/AVPlayer tests use a locally
 generated H264 MP4 and an HTTPS URLProtocol fixture with inert cookies. They
 are explicitly not server integration or an iPhone/simulator test.
 
-CI result and commit/run references will be appended after qualification.
+## Qualified source and exact results
+
+Source **`c6f904d`** passed
+[qualification 41340057036](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41340057036),
+job `124947965471`. No release workflow was invoked.
+
+| Check | Result |
+| --- | --- |
+| `swift test` | **362 tests, 0 failures** |
+| `python3 -m unittest discover -s tools/tests` | **65 committed guards passed** |
+| `python -m unittest discover -s tools\tests -p test_webrtc_viewing.py` | **16 focused local guards passed** |
+| Generic iOS-device Release `xcodebuild ... CODE_SIGNING_ALLOWED=NO build` above | **BUILD SUCCEEDED** |
+| Authenticated MP4 range/cookie scope/401/403/cancellation native fixtures | Passed |
+| Native macOS AVFoundation finite MP4 loading | Passed |
+| Native macOS AVPlayer H264 fixture decoding and two seeks using the same item | Passed |
+| Window replacement, paused intent, late creation, gaps, cleanup debt tests | Passed |
+| Simulator/UI tests, signing, archive/upload/TestFlight/deployment | Not run |
+| Real server recorded HTTP / real iPhone live or recorded acceptance | Not run; blockers above remain |
+
+Initial qualification found a nested helper, then missing cookies on observed
+requests, then AVKit delegate actor isolation errors. All were corrected;
+cookie assertions were not weakened. The fixture now rejects unauthenticated
+resource requests. PiP callbacks hop to MainActor and are fenced by coordinator
+token/current API/camera scope. Background/foreground handlers release or
+reattach inline ownership without stopping/reopening an explicit matching PiP.
+
+**No measured iPhone tap/seek latency, audio synchronization, live 4K/adaptation,
+stall/drop-rate, multi-camera, WAN/cellular, TURN-TLS or PiP results exist here.**
+Fixture test execution durations are not device startup/seek measurements.
+The metrics UI is instrumented for subsequent authorized acceptance.
+
+### Changed client surfaces
+
+- [RecordedHTTP.swift](../Sources/HorizonCore/RecordedHTTP.swift): draft DTOs,
+  capability/qualification/URL guards, timeline mapping and owned window jobs.
+- [RecordedMP4Reader.swift](../Sources/HorizonCore/RecordedMP4Reader.swift) and
+  [RecordedMP4Asset.swift](../Sources/HorizonCore/RecordedMP4Asset.swift):
+  public cookie-authenticated bounded range/resource loading.
+- [RecordingPlayer.swift](../App/Media/RecordingPlayer.swift): real native
+  AVPlayer controls, intent/window replacement, decoded-frame metrics and PiP.
+- [ReviewWorkspaceView.swift](../App/Views/ReviewWorkspaceView.swift),
+  [RecordingsView.swift](../App/Views/RecordingsView.swift) and
+  [ExportsView.swift](../App/Views/ExportsView.swift): catalog-time UI and controls.
+- [HorizonApp.swift](../App/HorizonApp.swift),
+  [AppModel.swift](../App/AppModel.swift),
+  [HorizonRoot.swift](../App/Views/HorizonRoot.swift) and
+  [LivePictureInPictureController.swift](../App/Media/LivePictureInPictureController.swift):
+  scope/background/cleanup and exclusive PiP ownership.
+- [RecordedViewing.swift](../Sources/HorizonCore/RecordedViewing.swift):
+  preserve typed catalog selection; remove retired recorded WebRTC controls.
+- [WebRTCViewing.swift](../Sources/HorizonCore/WebRTCViewing.swift): accept
+  minimum supported deployed live discovery without requiring storage metadata;
+  never interpret it as recorded support.
+- [Localizable.strings](../App/en.lproj/Localizable.strings), draft/native test
+  fixtures and source guards; related viewing/release documentation.
+
+Original download/export transfer code, notifications and unrelated dirty
+experimental xtool work were not altered or staged.

@@ -19,6 +19,12 @@ endpoint or discovery field is supplied. A version string or live feature does
 not enable recorded HTTP. The app never calls guessed recorded endpoints.
 See [RECORDED-HTTP-REVIEW.md](RECORDED-HTTP-REVIEW.md).
 
+Client source `c6f904d` is qualified by
+[unsigned run 41340057036](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41340057036):
+362 Core tests, 65 committed guards and generic iOS-device Release build passed.
+Native macOS authenticated MP4/AVPlayer fixtures passed; no physical-device or
+deployed recorded-HTTP result is claimed. No new TestFlight build was uploaded.
+
 No server agent contact, server deployment/settings, DNS/router changes,
 camera activation, source/retention/detector/Coral changes or test push is part
 of this work. The latest attachment prohibits deployment from this workstream:
