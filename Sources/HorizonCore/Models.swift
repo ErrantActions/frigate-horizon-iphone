@@ -85,6 +85,14 @@ public struct ICEServer: Decodable, Sendable {
     public let urls: [String]
     public let username: String?
     public let credential: String?
+    private enum CodingKeys: String, CodingKey { case urls, username, credential }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        if let url = try? values.decode(String.self, forKey: .urls) { urls = [url] }
+        else { urls = try values.decode([String].self, forKey: .urls) }
+        username = try values.decodeIfPresent(String.self, forKey: .username)
+        credential = try values.decodeIfPresent(String.self, forKey: .credential)
+    }
 }
 
 public struct HorizonCamera: Identifiable, Sendable {

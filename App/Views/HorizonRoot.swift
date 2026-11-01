@@ -13,6 +13,7 @@ struct HorizonRoot: View {
     @State private var restoredCamera: HorizonCamera?
     @ObservedObject private var pictureInPicture = LivePictureInPictureController.shared
     @ObservedObject private var talkbackCleanup = CameraTalkbackCleanupStore.shared
+    @ObservedObject private var viewerCleanup = ViewerCleanupStore.shared
 
     var body: some View {
         TabView(selection: $selection) {
@@ -61,6 +62,12 @@ struct HorizonRoot: View {
                     Button("Dismiss message") { pictureInPicture.error = nil }
                 }
                 .padding().background(HorizonPalette.surface)
+            } else if let error = viewerCleanup.error {
+                VStack {
+                    ErrorNotice(message: error)
+                    Button("Retry viewer cleanup") { Task { _ = await viewerCleanup.drain() } }
+                }
+                .padding().background(HorizonPalette.surface)
             } else if let error = talkbackCleanup.error {
                 ErrorNotice(message: error).padding().background(HorizonPalette.surface)
             } else if talkbackCleanup.isPending, let status = talkbackCleanup.status {
@@ -88,14 +95,6 @@ struct HorizonRoot: View {
                 guard model.api === api,
                       let camera = model.cameras.first(where: { $0.id == requested.cameraID && $0.settings.enabled }) else {
                     pictureInPicture.error = "The Picture in Picture camera is no longer available to this account."
-                    pictureInPicture.stop()
-                    return
-                }
-                let hls = pictureInPicture.retainedLiveHLSConfiguration(api: api, cameraID: camera.id)
-                guard hls != nil ? LiveHLSGate.mayRetain(cameraEnabled: camera.settings.enabled,
-                    optedIn: camera.settings.ui?.liveHLS == true, configuration: hls)
-                    : camera.settings.live.streams.values.contains(requested.stream) else {
-                    pictureInPicture.error = "The Picture in Picture playback source is no longer available."
                     pictureInPicture.stop()
                     return
                 }

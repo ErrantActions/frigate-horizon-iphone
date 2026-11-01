@@ -22,10 +22,13 @@ final class VideoReflection: ObservableObject {
 
     private enum Source {
         case player(AVPlayer)
+        case realtime(RTCViewerFrameObserver)
 
         func matches(_ other: Source) -> Bool {
             switch (self, other) {
             case (.player(let lhs), .player(let rhs)): return lhs === rhs
+            case (.realtime(let lhs), .realtime(let rhs)): return lhs === rhs
+            default: return false
             }
         }
     }
@@ -37,6 +40,7 @@ final class VideoReflection: ObservableObject {
     }
 
     func follow(player: AVPlayer) { setSource(.player(player)) }
+    func follow(realtime: RTCViewerFrameObserver) { setSource(.realtime(realtime)) }
 
     func setEnabled(_ value: Bool) {
         guard enabled != value else { return }
@@ -68,6 +72,7 @@ final class VideoReflection: ObservableObject {
                     self.attachItem(player.currentItem)
                 }
             }
+        case .realtime: break
         }
         sampling = Task { [weak self] in
             while !Task.isCancelled {
@@ -168,6 +173,9 @@ final class VideoReflection: ObservableObject {
 
     private func capture() -> Sample {
         switch source {
+        case .realtime(let observer):
+            guard let buffer = observer.pixelBuffer() else { return .clear }
+            return .frame(ReflectionFrame(content: .pixelBuffer(buffer, .identity)))
         case .player(let player):
             // Check identity synchronously as well as via KVO, so no old-camera image can escape.
             if item !== player.currentItem { attachItem(player.currentItem) }

@@ -276,9 +276,8 @@ struct EventDetailView: View {
                     Section {
                         NavigationLink {
                             RecordingPlaybackView(api: api, camera: current.camera, start: current.startTime, end: end,
-                                mediaURL: api.address.endpoint(["vod", "preview", current.camera, "start",
-                                    String(current.startTime), "end", String(end), "index.m3u8"]))
-                        } label: { Label("Play HLS preview", systemImage: "play.rectangle") }
+                                identity: .event(current.id))
+                        } label: { Label("Recorded preview", systemImage: "play.rectangle") }
                     }
                 }
                 informationSection
@@ -327,7 +326,7 @@ struct EventDetailView: View {
         Section {
             if current.hasClip, let end = current.endTime, end > current.startTime {
                 RecordingPlaybackView(api: api, camera: current.camera, start: current.startTime, end: end,
-                    mediaURL: api.address.endpoint(["vod", "event", current.id, "index.m3u8"]))
+                    identity: .event(current.id))
                     .frame(height: 280)
             } else {
                 ServerImage(api: api, url: api.address.endpoint([

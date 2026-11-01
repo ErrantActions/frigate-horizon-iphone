@@ -119,7 +119,7 @@ final class ReviewPlaybackStore: ObservableObject {
             guard let position = mapping.position(for: timestamp) else { missingRecording = true; return }
             timeline = mapping
             loadedCamera = camera
-            playback.open(url: try api.address.playback(camera: camera, start: start, end: end),
+            playback.open(selection: RecordedViewingSelection(camera: camera, identity: .timeRange(start: start, end: end)),
                 api: api, initialPosition: position, autoplay: autoplay)
         } catch {
             guard !Task.isCancelled, clipGeneration == token else { return }

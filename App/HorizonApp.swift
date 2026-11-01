@@ -34,23 +34,19 @@ struct HorizonApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .horizonMediaCleanupFailure)) { notification in
                 if let message = notification.object as? String { model.error = message }
             }
-            .task(id: "\(model.api.map { String(describing: ObjectIdentifier($0)) } ?? "")-\(model.profile?.username ?? "")-\(model.profile?.role ?? "")-\(model.cameras.map { "\($0.id):\($0.settings.enabled):\($0.settings.ui?.liveHLS == true):\($0.settings.live.streams.values.sorted())" }.joined(separator: ","))") {
+            .task(id: "\(model.api.map { String(describing: ObjectIdentifier($0)) } ?? "")-\(model.profile?.username ?? "")-\(model.profile?.role ?? "")-\(model.cameras.map { "\($0.id):\($0.settings.enabled)" }.joined(separator: ","))") {
                 let account = model.api.flatMap { api in
                     model.profile.map { HorizonAccountScope.key(server: api.address.url.absoluteString, username: $0.username) }
                 }
                 if mediaAccount != account {
                     LivePictureInPictureController.shared.stop()
-                    HLSBackgroundOwnership.stopAll()
+                    RecordedViewingRegistry.stopAll()
                     mediaAccount = account
                 }
                 if let api = model.api {
                     for camera in model.cameras {
                         if let retained = LivePictureInPictureController.shared.retainedSelection(api: api, cameraID: camera.id) {
-                            let hls = LivePictureInPictureController.shared.retainedLiveHLSConfiguration(
-                                api: api, cameraID: camera.id)
-                            if hls != nil ? !LiveHLSGate.mayRetain(cameraEnabled: camera.settings.enabled,
-                                optedIn: camera.settings.ui?.liveHLS == true, configuration: hls)
-                                : !camera.settings.live.streams.values.contains(retained.stream) {
+                            if !camera.settings.enabled {
                                 LivePictureInPictureController.shared.stop()
                             }
                         }

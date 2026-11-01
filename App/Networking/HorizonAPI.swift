@@ -16,6 +16,14 @@ final class SameOriginDelegate: NSObject, URLSessionTaskDelegate {
     }
 }
 
+final class ViewerTaskDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}
+
 final class HorizonAPI {
     let address: ServerAddress
     let session: URLSession
@@ -62,10 +70,20 @@ final class HorizonAPI {
         return try JSONDecoder().decode(T.self, from: bytes)
     }
 
-    func liveHLSStatus(camera: String) async throws -> LiveHLSStatus {
-        let request = URLRequest(url: address.endpoint(["api", camera, "live", "hls", "status"]))
-        let result = try await dataWithHTTPResponse(request, distinguishCameraDenial: true)
-        return try JSONDecoder().decode(LiveHLSStatus.self, from: result.data)
+    func viewerRequest(_ url: URL, method: String = "GET", body: Data? = nil,
+                       success: Set<Int> = [200]) async throws -> Data {
+        guard address.url.scheme == "https", address.hasSameOrigin(as: url),
+              url.path.hasPrefix(address.endpoint(["api"]).path + "/"),
+              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
+            throw HorizonError.message(ViewingMessage.invalid)
+        }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        request.httpMethod = method
+        request.httpBody = body
+        if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+        let result = try await dataWithHTTPResponse(request, viewerRequest: true)
+        guard success.contains(result.response.statusCode) else { throw HorizonError.unexpectedResponse }
+        return result.data
     }
 
     func image(_ url: URL) async throws -> Data {
@@ -191,8 +209,8 @@ final class HorizonAPI {
     }
 
     private func dataWithHTTPResponse(_ request: URLRequest,
-                                      distinguishCameraDenial: Bool = false) async throws -> (data: Data, response: HTTPURLResponse) {
-        let (bytes, response) = try await session.data(for: request)
+                                      distinguishCameraDenial: Bool = false, viewerRequest: Bool = false) async throws -> (data: Data, response: HTTPURLResponse) {
+        let (bytes, response) = try await session.data(for: request, delegate: viewerRequest ? ViewerTaskDelegate() : nil)
         guard let response = response as? HTTPURLResponse else { throw HorizonError.unexpectedResponse }
         if response.statusCode == 403 { throw HorizonError.forbidden }
         if response.statusCode == 401 { throw HorizonError.unauthorized }

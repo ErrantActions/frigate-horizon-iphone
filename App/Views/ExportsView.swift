@@ -401,7 +401,7 @@ private struct ExportPlayerView: View {
             .navigationTitle(item.name)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .task {
-                playback.open(url: api.address.endpoint(["vod", "export", item.id, "index.m3u8"]), api: api)
+                playback.open(selection: RecordedViewingSelection(camera: item.camera, identity: .export(item.id)), api: api)
             }
             .onDisappear { playback.releaseInline() }
         }

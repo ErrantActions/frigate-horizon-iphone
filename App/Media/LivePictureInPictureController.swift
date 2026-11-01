@@ -80,10 +80,10 @@ final class LivePictureInPictureController: NSObject, ObservableObject {
         return session?.selection
     }
 
-    func retainedLiveHLSConfiguration(api: HorizonAPI, cameraID: String) -> LiveHLSConfiguration? {
+    func retainedViewerConfiguration(api: HorizonAPI, cameraID: String) -> ViewerConfiguration? {
         guard scopedAPI === api, session?.selection?.cameraID == cameraID,
-              session?.usesLiveHLS == true else { return nil }
-        return session?.liveHLSConfiguration
+              session?.viewerConfiguration != nil else { return nil }
+        return session?.viewerConfiguration
     }
 
     func start(_ value: LivePlaybackSession) {
@@ -121,11 +121,12 @@ final class LivePictureInPictureController: NSObject, ObservableObject {
             return
         }
         let controller: AVPictureInPictureController
-            guard let hlsController = AVPictureInPictureController(playerLayer: value.hlsLive.playerLayer) else {
-                fail("Live HLS Picture in Picture could not be created on this device.")
-                return
-            }
-            controller = hlsController
+        guard let track = value.rtcViewer.videoTrack else { fail(ViewingMessage.failed); return }
+        value.rtcViewer.pipRenderer.onFailure = { [weak self] in self?.fail(ViewingMessage.failed) }
+        value.rtcViewer.pipRenderer.follow(track)
+        let source = AVPictureInPictureController.ContentSource(
+            sampleBufferDisplayLayer: value.rtcViewer.pipRenderer.displayLayer, playbackDelegate: self)
+        controller = AVPictureInPictureController(contentSource: source)
         controller.delegate = self
         controller.requiresLinearPlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = false
@@ -163,17 +164,13 @@ final class LivePictureInPictureController: NSObject, ObservableObject {
         startup = nil
         isActive = true
         isStarting = false
-        if !session.usesLiveHLS { observed.invalidatePlaybackState() }
+        observed.invalidatePlaybackState()
         watchdog = Task { [weak self, weak session] in
             do {
                 while !Task.isCancelled {
                     try await Task.sleep(for: .seconds(2))
                     guard let self, let session, self.isPlaying(session) else { return }
-                    if session.usesLiveHLS, session.hlsLive.player.timeControlStatus == .paused {
-                        self.stop()
-                        return
-                    }
-                    let lastFrame = session.hlsLive.lastVideoReceivedAt
+                    let lastFrame = session.rtcViewer.lastVideoReceivedAt
                     guard session.isRunning, let lastFrame, Date().timeIntervalSince(lastFrame) < 10 else {
                         session.sourceFailed("No live video is arriving. Check camera availability and reconnect.")
                         return
@@ -211,6 +208,8 @@ final class LivePictureInPictureController: NSObject, ObservableObject {
         restoration = nil
         possibleObservation = nil
         trackObservation = nil
+        previous?.rtcViewer.pipRenderer.onFailure = nil
+        previous?.rtcViewer.pipRenderer.stop()
         previousController?.delegate = nil
         previousController?.stopPictureInPicture()
         previousController?.contentSource = nil

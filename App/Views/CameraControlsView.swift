@@ -59,7 +59,7 @@ struct CameraControlsView: View {
             } else if let capabilities = controls.capabilities {
                 ptz(capabilities)
                 Divider()
-                Text("Talkback is unsupported in this HLS-only release. Authorized PTZ remains available.")
+                Text("Talkback is not enabled for this receive-only viewer. Authorized PTZ remains available.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if controls.isStopping {

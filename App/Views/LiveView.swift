@@ -338,8 +338,9 @@ struct LiveVideoView: View {
     var adaptiveQuality = false
     var expandedQuality = false
     var maximumQualityHeight: Int? = nil
-    var onHLSHeightsChanged: (([Int]) -> Void)? = nil
-    var exactHLSHeight: Int? = nil
+    var onViewerHeightsChanged: (([Int]) -> Void)? = nil
+    var exactViewerHeight: Int? = nil
+    var forceRelay = false
     var tracksScrollVisibility = false
     @EnvironmentObject private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
@@ -347,14 +348,14 @@ struct LiveVideoView: View {
     @StateObject private var attachment = LivePlaybackAttachment()
     @ObservedObject private var pictureInPicture = LivePictureInPictureController.shared
     @ObservedObject private var network = LiveNetworkConditions.shared
-    private let transport = "hls"
+    private let transport = "webrtc"
     @State private var retry = 0
     @State private var visible = false
     @State private var viewer = UUID()
     @State private var showReauthentication = false
 
     private var playback: LivePlaybackSession { attachment.session }
-    private var hlsLive: HLSLiveStream { playback.hlsLive }
+    private var rtc: OwnedWebRTCViewer { playback.rtcViewer }
     private var allowedCamera: HorizonCamera? { model.cameras.first { $0.id == camera.id } }
     private var playbackEnabled: Bool { allowedCamera?.settings.enabled == true }
     private var playbackQuality: LivePlaybackQuality? {
@@ -362,22 +363,23 @@ struct LiveVideoView: View {
     }
     private var effectiveStream: String? { playbackQuality?.requestedStream }
     private var qualityPlan: LiveAdaptiveQualityPlan? { playbackQuality?.adaptivePlan }
-    private var hlsConfiguration: LiveHLSConfiguration? {
+    private var viewingConfiguration: ViewerConfiguration? {
         guard playbackEnabled else { return nil }
         let fullCap = network.restricted ? min(maximumQualityHeight ?? 720, 720) : maximumQualityHeight
         let cap = expandedQuality ? fullCap : (network.restricted ? 720 : nil)
-        return LiveHLSConfiguration(maximumHeight: cap, exactHeight: expandedQuality ? exactHLSHeight : nil,
-            grid: !expandedQuality, audio: expandedQuality)
+        return ViewerConfiguration(grid: !expandedQuality, maximumHeight: cap,
+            exactHeight: expandedQuality ? exactViewerHeight : nil, audio: expandedQuality,
+            dataSaver: network.restricted, forceRelay: expandedQuality && forceRelay)
     }
 
     var body: some View {
         ZStack {
             Color.black
-            NativeLiveHLSSurface(stream: hlsLive, fillVideo: fillVideo).id(ObjectIdentifier(playback))
+            NativeRTCViewerSurface(track: rtc.videoTrack, fillVideo: fillVideo).id(ObjectIdentifier(playback))
             if !playbackEnabled {
                 Label("Camera disabled", systemImage: "video.slash")
                     .foregroundStyle(.white)
-            } else if effectiveStream == nil && hlsConfiguration == nil {
+            } else if effectiveStream == nil && viewingConfiguration == nil {
                 Text("Choose a live stream in the camera view.")
                     .font(.callout).foregroundStyle(.white).padding()
             } else if let error = playbackError {
@@ -399,7 +401,7 @@ struct LiveVideoView: View {
         }
         .overlay(alignment: .bottomLeading) {
             if showsPiPControl, resolution != nil || playbackError != nil {
-                ShareLink(item: hlsLive.metrics) {
+                ShareLink(item: rtc.metrics) {
                     Label("Playback metrics", systemImage: "waveform.path.ecg")
                         .font(.caption).padding(8).background(.black.opacity(0.75), in: Capsule())
                 }
@@ -407,7 +409,7 @@ struct LiveVideoView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if showsPiPControl, playbackEnabled, effectiveStream != nil || hlsConfiguration != nil {
+            if showsPiPControl, playbackEnabled, effectiveStream != nil || viewingConfiguration != nil {
                 Button {
                     if pictureInPicture.owns(playback), pictureInPicture.isStarting {
                         pictureInPicture.stop()
@@ -431,7 +433,7 @@ struct LiveVideoView: View {
         }
         .contextMenu {
             Button("Reconnect", systemImage: "arrow.clockwise") { reconnect() }
-            ShareLink(item: hlsLive.metrics) {
+            ShareLink(item: rtc.metrics) {
                 Label("Share playback metrics", systemImage: "waveform.path.ecg")
             }
             if let favoriteAction {
@@ -478,7 +480,7 @@ struct LiveVideoView: View {
         .onChange(of: active) { _, value in
             if !value { playback.deactivateInlineViewer(viewer) }
         }
-        .onChange(of: muted, initial: true) { _, value in hlsLive.muted = value }
+        .onChange(of: muted, initial: true) { _, value in rtc.muted = value }
         .onChange(of: resolution != nil, initial: true) { _, value in onVideoReady?(value) }
         .onChange(of: playbackError, initial: true) { _, value in onPlaybackFailure?(value) }
         .onChange(of: playback.needsReauthentication, initial: true) { _, needed in
@@ -487,13 +489,12 @@ struct LiveVideoView: View {
         .sheet(isPresented: $showReauthentication) {
             if let username = model.profile?.username { ReauthenticateView(username: username) }
         }
-        .onReceive(hlsLive.$resolution) { resolution in
-            guard playback.usesLiveHLS else { return }
-            if resolution != nil { reflection?.follow(player: hlsLive.player) }
+        .onReceive(rtc.$resolution) { resolution in
+            if resolution != nil { reflection?.follow(realtime: rtc.frameObserver) }
             else { reflection?.clearSource() }
         }
-        .onReceive(hlsLive.$advertisedHeights) { heights in onHLSHeightsChanged?(heights) }
-        .task(id: "\(ObjectIdentifier(api))-\(camera.id)-\(playbackEnabled)-\(maximumQualityHeight ?? 0)-\(exactHLSHeight ?? 0)-\(network.restricted)-\(expandedQuality)-\(active)-\(visible)-\(scenePhase == .active)-\(retry)-\(muted)-\(pictureInPicture.scopeRevision)") {
+        .onReceive(rtc.$advertisedHeights) { heights in onViewerHeightsChanged?(heights) }
+        .task(id: "\(ObjectIdentifier(api))-\(camera.id)-\(playbackEnabled)-\(maximumQualityHeight ?? 0)-\(exactViewerHeight ?? 0)-\(forceRelay)-\(network.restricted)-\(expandedQuality)-\(active)-\(visible)-\(scenePhase == .active)-\(retry)-\(muted)-\(pictureInPicture.scopeRevision)") {
             attachment.adoptRetainedSession(
                 api: api, cameraID: camera.id, stream: effectiveStream, transport: transport,
                 enabled: showsPiPControl, viewer: viewer
@@ -503,10 +504,10 @@ struct LiveVideoView: View {
                 muted: muted, cameraEnabled: playbackEnabled,
                 active: active, visible: visible, foreground: scenePhase == .active,
                 viewer: viewer, iceServers: model.iceServers, adaptiveQuality: qualityPlan,
-                liveHLS: hlsConfiguration
+                viewerConfiguration: viewingConfiguration
             )
             if active, visible, scenePhase == .active {
-                reflection?.follow(player: hlsLive.player)
+                reflection?.follow(realtime: rtc.frameObserver)
             } else {
                 reflection?.clearSource()
             }
@@ -534,23 +535,25 @@ struct CameraDetailView: View {
     @State private var retry = UUID()
     @State private var foldMode: FoldMode = .flat
     @StateObject private var reflection = VideoReflection()
-    private let transport = "hls"
+    private let transport = "webrtc"
     @State private var showQuickEvidence = false
     @State private var automaticMaximumHeight = 0
     @State private var history: CameraHistoryContext?
     @State private var showHistory = false
     @State private var historyError: String?
-    @State private var hlsHeights: [Int] = []
+    @State private var viewerHeights: [Int] = []
     @State private var pinnedHeight = 0
+    @State private var forceRelay = false
 
     init(api: HorizonAPI, camera: HorizonCamera) {
         self.api = api
         self.camera = camera
         let retained = LivePictureInPictureController.shared.retainedSelection(api: api, cameraID: camera.id)
-        let hls = LivePictureInPictureController.shared.retainedLiveHLSConfiguration(api: api, cameraID: camera.id)
-        _stream = State(initialValue: hls == nil ? (retained?.stream ?? "") : "")
-        _automaticMaximumHeight = State(initialValue: hls?.maximumHeight ?? 0)
-        _pinnedHeight = State(initialValue: hls?.exactHeight ?? 0)
+        let configuration = LivePictureInPictureController.shared.retainedViewerConfiguration(api: api, cameraID: camera.id)
+        _stream = State(initialValue: "")
+        _automaticMaximumHeight = State(initialValue: configuration?.maximumHeight ?? 0)
+        _pinnedHeight = State(initialValue: configuration?.exactHeight ?? 0)
+        _forceRelay = State(initialValue: configuration?.forceRelay ?? false)
         _muted = State(initialValue: retained?.muted ?? true)
     }
 
@@ -569,8 +572,8 @@ struct CameraDetailView: View {
                     active: allowed && !showQuickEvidence && !showHistory, muted: muted, reflection: reflection,
                     showsPiPControl: true, adaptiveQuality: stream.isEmpty, expandedQuality: true,
                     maximumQualityHeight: maximumHeight,
-                    onHLSHeightsChanged: { if !$0.isEmpty { hlsHeights = $0 } },
-                    exactHLSHeight: pinnedHeight == 0 ? nil : pinnedHeight
+                    onViewerHeightsChanged: { if !$0.isEmpty { viewerHeights = $0 } },
+                    exactViewerHeight: pinnedHeight == 0 ? nil : pinnedHeight, forceRelay: forceRelay
                 )
                 .id(retry)
                 .clipShape(RoundedRectangle(cornerRadius: foldMode == .flat ? 0 : HorizonPalette.controlRadius))
@@ -600,17 +603,17 @@ struct CameraDetailView: View {
                             active: allowed && scenePhase == .active && !showQuickEvidence && !showHistory)
                         HorizonCard {
                             DisclosureGroup("Quality and connection") {
-                            LabeledContent("Transport", value: "AVPlayer HLS / HTTPS")
+                            LabeledContent("Transport", value: "Native WebRTC")
                             Picker("Quality", selection: $pinnedHeight) {
                                 Text("Auto").tag(0)
-                                ForEach(hlsHeights, id: \.self) { height in
+                                ForEach(viewerHeights, id: \.self) { height in
                                     Text(height == 2160 ? "4K (2160p)" : "\(height)p").tag(height)
                                 }
-                                if pinnedHeight != 0, !hlsHeights.contains(pinnedHeight) {
+                                if pinnedHeight != 0, !viewerHeights.contains(pinnedHeight) {
                                     Text("\(pinnedHeight)p (unavailable)").tag(pinnedHeight)
                                 }
                             }
-                            let heights = hlsHeights
+                            let heights = viewerHeights
                             if pinnedHeight == 0 {
                                 Menu {
                                     Picker("Automatic maximum", selection: $automaticMaximumHeight) {
@@ -628,8 +631,9 @@ struct CameraDetailView: View {
                                         ? "Default" : "\(automaticMaximumHeight)p")
                                 }
                             }
-                            Text("Auto starts low, then adapts using throughput and buffering. Exact quality pins use an advertised server rung. Low Data Mode caps playback at 720p; originals and downloads never change.")
+                            Text("Auto uses the server's WebRTC bandwidth adaptation. Pins use this session's offered ladder. Data Saver detail uses 720p, never a grid-only rung. Original recordings and downloads do not change.")
                                 .font(.caption).foregroundStyle(.secondary)
+                            Toggle("Force relay (diagnostic test)", isOn: $forceRelay)
                             Divider()
                             Button("Reconnect", systemImage: "arrow.clockwise") {
                                 LivePictureInPictureController.shared.stop()
@@ -641,11 +645,11 @@ struct CameraDetailView: View {
                         HorizonCard {
                             DisclosureGroup("Camera information") {
                             LabeledContent("Camera", value: camera.name)
-                            LabeledContent("Transport", value: "Native AVPlayer HLS / HTTPS")
+                            LabeledContent("Transport", value: "Native WebRTC")
                             HorizonStatusPill(title: camera.settings.enabled ? "Camera enabled" : "Camera disabled",
                                 systemImage: camera.settings.enabled ? "checkmark.circle" : "video.slash",
                                 tint: camera.settings.enabled ? HorizonPalette.accent : HorizonPalette.warm)
-                            Text("All viewing uses authenticated HLS on your configured server origin. Camera permission and normal HTTPS trust apply to every playlist and media request. No alternate viewing transport is opened.")
+                            Text("Discovery and signaling use your authenticated HTTPS server. Media uses direct ICE or session-scoped authenticated TURN. Missing backend support shows an upgrade state; no alternate viewing transport is opened.")
                                 .font(.footnote).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                             }
@@ -671,9 +675,9 @@ struct CameraDetailView: View {
             }
             .onAppear {
                 if let retained = LivePictureInPictureController.shared.retainedSelection(api: api, cameraID: camera.id) {
-                    if let hls = LivePictureInPictureController.shared.retainedLiveHLSConfiguration(api: api, cameraID: camera.id) {
+                    if let configuration = LivePictureInPictureController.shared.retainedViewerConfiguration(api: api, cameraID: camera.id) {
                         stream = ""
-                        automaticMaximumHeight = hls.maximumHeight ?? 0
+                        automaticMaximumHeight = configuration.maximumHeight ?? 0
                     } else { stream = retained.stream }
                     muted = retained.muted
                 }
