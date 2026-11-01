@@ -66,15 +66,26 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
     private let lock = NSLock()
     private var session: URLSession!
     private var closed = false
+    private var measurementHandler: (@Sendable (HLSMeasurement) -> Void)?
+    private var initializationURLs: Set<URL> = []
     private struct Pending {
         var continuation: CheckedContinuation<(Data, HTTPURLResponse), Error>?
         var stream: AsyncThrowingStream<LiveHLSNetworkEvent, Error>.Continuation?
         var response: HTTPURLResponse?
         var data = Data()
         var received = 0
+        let startedAt: TimeInterval
+        var firstByte: TimeInterval?
+        let kind: HLSRequestMeasurement.Kind
         let limit: Int
     }
     private var pending: [Int: Pending] = [:]
+
+    public func setMeasurementHandler(_ handler: @escaping @Sendable (HLSMeasurement) -> Void) {
+        lock.lock()
+        measurementHandler = handler
+        lock.unlock()
+    }
 
     public init(policy: LiveHLSResourcePolicy, cookies: [HTTPCookie], maximumHeight: Int? = nil,
                 configuration: URLSessionConfiguration = .ephemeral, masterURL: URL? = nil) {
@@ -112,6 +123,7 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
             if policy.isLive && url.path == policy.canonicalMaster.path {
                 selected = try LiveHLSMaster(text: text, policy: policy, url: url, maximumHeight: maximumHeight).playlist
             } else { selected = text }
+            try recordPlaylist(selected, url: url)
             let rewritten = Data(try policy.rewritePlaylist(selected, url: url).utf8)
             return LiveHLSResource(data: rewritten, offset: 0, totalLength: Int64(rewritten.count), pathExtension: "m3u8")
         }
@@ -133,7 +145,8 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
                 return
             }
             let task = session.dataTask(with: request)
-            pending[task.taskIdentifier] = Pending(stream: stream, limit: 67_108_864)
+            pending[task.taskIdentifier] = Pending(stream: stream,
+                startedAt: ProcessInfo.processInfo.systemUptime, kind: resourceKind(url), limit: 67_108_864)
             lock.unlock()
             cancellation.bind(task)
             task.resume()
@@ -155,6 +168,7 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
                 }
                 let task = session.dataTask(with: request)
                 pending[task.taskIdentifier] = Pending(continuation: continuation,
+                    startedAt: ProcessInfo.processInfo.systemUptime, kind: resourceKind(url),
                     limit: url.pathExtension.lowercased() == "m3u8" ? 1_048_576 : 67_108_864)
                 lock.unlock()
                 cancellation.bind(task)
@@ -175,11 +189,45 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
         return request
     }
 
+    // Called with the delegate-state lock held.
+    private func resourceKind(_ url: URL) -> HLSRequestMeasurement.Kind {
+        if url.path == policy.canonicalMaster.path { return .master }
+        if url.pathExtension.lowercased() == "m3u8" { return .childPlaylist }
+        return initializationURLs.contains(url) ? .initialization : .media
+    }
+
+    private func recordPlaylist(_ text: String, url: URL) throws {
+        var maps: [URL] = []
+        var targets: [Double] = []
+        for line in text.components(separatedBy: .newlines) {
+            if line.hasPrefix("#EXT-X-MAP:") {
+                let attributes = try HLSAttributes.parse(line)
+                guard let uri = attributes["URI"] else { throw HorizonError.unexpectedResponse }
+                maps.append(try policy.resolve(uri, relativeTo: url))
+            }
+            if line.hasPrefix("#EXT-X-PART-INF:") {
+                let attributes = try HLSAttributes.parse(line)
+                guard let value = attributes["PART-TARGET"].flatMap(Double.init), value.isFinite, value > 0 else {
+                    throw HorizonError.message("The HLS packager returned an invalid PART-TARGET, not an authentication failure.")
+                }
+                targets.append(value)
+            }
+        }
+        lock.lock()
+        if initializationURLs.count > 128 { initializationURLs.removeAll(keepingCapacity: true) }
+        for map in maps { initializationURLs.insert(map) }
+        let handler = measurementHandler
+        lock.unlock()
+        for target in targets { handler?(.partTarget(target)) }
+    }
+
     public func invalidate() {
         lock.lock()
         closed = true
         let cancelled = Array(pending.values)
         pending.removeAll()
+        initializationURLs.removeAll()
+        measurementHandler = nil
         lock.unlock()
         session.invalidateAndCancel()
         for record in cancelled {
@@ -204,6 +252,9 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
             guard let response = response as? HTTPURLResponse, let url = response.url else {
                 throw HorizonError.unexpectedResponse
             }
+            lock.lock()
+            pending[dataTask.taskIdentifier]?.response = response
+            lock.unlock()
             _ = try policy.validate(url)
             if response.statusCode == 401 { throw HorizonError.unauthorized }
             if response.statusCode == 403 { throw HorizonError.forbidden }
@@ -245,6 +296,7 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
             return
         }
         record.received += data.count
+        if record.firstByte == nil { record.firstByte = ProcessInfo.processInfo.systemUptime - record.startedAt }
         if record.stream == nil { record.data.append(data) }
         pending[dataTask.taskIdentifier] = record
         lock.unlock()
@@ -258,8 +310,13 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
     private func finish(_ task: URLSessionTask, error: Error?) {
         lock.lock()
         let record = pending.removeValue(forKey: task.taskIdentifier)
+        let handler = measurementHandler
         lock.unlock()
         guard let record else { return }
+        handler?(.request(HLSRequestMeasurement(kind: record.kind,
+            elapsed: ProcessInfo.processInfo.systemUptime - record.startedAt,
+            firstByte: record.firstByte, status: (error as? HorizonError)?.httpStatusCode ?? record.response?.statusCode,
+            bytes: record.received)))
         if let error {
             record.continuation?.resume(throwing: error)
             record.stream?.finish(throwing: error)

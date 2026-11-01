@@ -55,6 +55,12 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
     }
 
     func attach(api: HorizonAPI?, username: String?, allowedCameraIDs: [String]) async {
+        if let api, self.api === api, self.username == username {
+            self.allowedCameraIDs = allowedCameraIDs
+            refreshImageSession(api: api, username: username, allowedCameraIDs: allowedCameraIDs)
+            return
+        }
+        let previousRegistration = requestTask
         let token = UUID()
         generation = token
         self.api = api
@@ -74,6 +80,8 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
         do { try NotificationImageVault.clear() }
         catch { self.error = error.localizedDescription; return }
         guard let api, let username else { accountFingerprint = nil; route = nil; return }
+        await previousRegistration?.value
+        guard generation == token, !Task.isCancelled else { return }
         accountFingerprint = fingerprint(api: api, username: username)
         if imageNotifications && accountFingerprint != UserDefaults.standard.string(forKey: "nativePushImagesAccount") {
             imageNotifications = false
@@ -177,6 +185,7 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
             let matches = devices.filter { $0.installationID == id }
             guard matches.count <= 1 else { throw HorizonError.message("Duplicate installation metadata. Notification renewal was stopped.") }
             actualSelection = NativePushSelection()
+            registered = false
             if let device = matches.first {
                 actualSelection.confirm(device.cameraIDs)
                 registered = true

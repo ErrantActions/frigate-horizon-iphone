@@ -17,8 +17,8 @@ class TestHLSIntegration(unittest.TestCase):
         for name in ["LiveStream.swift", "HTTPSLiveStream.swift", "LivePiPVideoRenderer.swift"]:
             self.assertFalse((ROOT / "App/Media" / name).exists())
         session = source("App/Media/LivePlaybackSession.swift")
-        self.assertIn("for attempt in 0...1", session)
-        self.assertIn("lastHTTPStatus == 404", session)
+        self.assertIn("HLSRecoveryPolicy()", session)
+        self.assertIn("HLSRecoveryCoordinator.shared.reserve", session)
         self.assertNotIn("webSocketTask", session)
         live = source("App/Views/LiveView.swift")
         self.assertNotIn('tag("webrtc")', live)

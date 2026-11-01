@@ -14,7 +14,7 @@ class TestHLSOnly(unittest.TestCase):
         live = source("App", "Views", "LiveView.swift")
         self.assertNotIn('@AppStorage("liveTransport")', live)
         self.assertIn('private let transport = "hls"', live)
-        self.assertIn("exactHeight: exactHLSHeight", live)
+        self.assertIn("exactHeight: expandedQuality ? exactHLSHeight : nil", live)
         session = source("App", "Media", "LivePlaybackSession.swift")
         self.assertIn("self.hlsLive.prepare", session)
 
@@ -22,8 +22,8 @@ class TestHLSOnly(unittest.TestCase):
         session = source("App", "Media", "LivePlaybackSession.swift")
         self.assertNotIn("httpsLive", session)
         self.assertNotIn("await live.run", session)
-        self.assertIn("for attempt in 0...1", session)
-        self.assertIn("authenticationRequired: LiveHLSGate.requiresReauthentication(error)", session)
+        self.assertIn("HLSRecoveryPolicy()", session)
+        self.assertIn("authenticationRequired: LiveHLSGate.requiresReauthentication(problem)", session)
 
     def test_pip_scope_and_return_honor_explicit_hls_configuration(self):
         for path in [("App", "HorizonApp.swift"), ("App", "Views", "HorizonRoot.swift")]:

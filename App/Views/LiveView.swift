@@ -364,8 +364,9 @@ struct LiveVideoView: View {
     private var qualityPlan: LiveAdaptiveQualityPlan? { playbackQuality?.adaptivePlan }
     private var hlsConfiguration: LiveHLSConfiguration? {
         guard playbackEnabled else { return nil }
-        let cap = network.restricted ? min(maximumQualityHeight ?? 720, 720) : maximumQualityHeight
-        return LiveHLSConfiguration(maximumHeight: cap, exactHeight: exactHLSHeight,
+        let fullCap = network.restricted ? min(maximumQualityHeight ?? 720, 720) : maximumQualityHeight
+        let cap = expandedQuality ? fullCap : (network.restricted ? 720 : nil)
+        return LiveHLSConfiguration(maximumHeight: cap, exactHeight: expandedQuality ? exactHLSHeight : nil,
             grid: !expandedQuality, audio: expandedQuality)
     }
 
@@ -396,17 +397,8 @@ struct LiveVideoView: View {
                 }
             }
         }
-        .overlay(alignment: .topLeading) {
-            if showsVideoHUD, let resolution {
-                Text("\(playback.usesLiveHLS ? "HLS ABR" : (adaptiveQuality ? "AUTO" : "LIVE"))  \(Int(resolution.width)) x \(Int(resolution.height))")
-                    .font(.caption2.monospaced().bold())
-                    .padding(.horizontal, 10).padding(.vertical, 7)
-                    .background(reduceTransparency ? Color.black : Color.black.opacity(0.78), in: Capsule())
-                    .foregroundStyle(.white).padding(12)
-            }
-        }
         .overlay(alignment: .bottomLeading) {
-            if showsPiPControl, resolution != nil {
+            if showsPiPControl, resolution != nil || playbackError != nil {
                 ShareLink(item: hlsLive.metrics) {
                     Label("Playback metrics", systemImage: "waveform.path.ecg")
                         .font(.caption).padding(8).background(.black.opacity(0.75), in: Capsule())

@@ -2,6 +2,15 @@ import Combine
 import AVFoundation
 import HorizonCore
 
+@MainActor
+private final class HLSRecoveryCoordinator {
+    static let shared = HLSRecoveryCoordinator()
+    private var schedule = HLSRecoverySchedule()
+    func reserve(backoff: TimeInterval) -> TimeInterval {
+        schedule.reserve(now: ProcessInfo.processInfo.systemUptime, backoff: backoff)
+    }
+}
+
 struct LivePictureInPictureSelection: Equatable {
     let cameraID: String
     let stream: String
@@ -36,6 +45,7 @@ final class LivePlaybackSession: ObservableObject {
     @Published private(set) var paused = false
     @Published private(set) var selection: LivePictureInPictureSelection?
     @Published private(set) var needsReauthentication = false
+    @Published private var recoveryStatus: String?
     private(set) var liveHLSConfiguration: LiveHLSConfiguration?
     private var apiIdentity: ObjectIdentifier?
     private var playback: Task<Void, Never>?
@@ -45,7 +55,7 @@ final class LivePlaybackSession: ObservableObject {
     var usesLiveHLS: Bool { true }
     var resolution: CGSize? { hlsLive.resolution }
     var error: String? { failure ?? hlsLive.error }
-    var status: String { hlsLive.status }
+    var status: String { recoveryStatus ?? hlsLive.status }
     var compatibilityNotice: String? { nil }
     var hasInlineViewer: Bool { viewers.values.contains(true) }
     var isRunning: Bool { playback != nil }
@@ -79,7 +89,7 @@ final class LivePlaybackSession: ObservableObject {
         }
         let retained = pip.owns(self) && apiIdentity == ObjectIdentifier(api) && selection?.cameraID == cameraID
         if apiIdentity != ObjectIdentifier(api) || selection?.cameraID != cameraID ||
-            (!retained && liveHLSConfiguration != configuration) {
+            (!retained && liveHLSConfiguration != configuration && !hlsLive.canReuse(configuration)) {
             if pip.owns(self) { pip.stop() }
             suspend()
             apiIdentity = ObjectIdentifier(api)
@@ -96,8 +106,9 @@ final class LivePlaybackSession: ObservableObject {
         generation = token
         playback = Task { [weak self] in
             guard let self else { return }
-            // A rotated child is recovered by rebuilding status and master once, not retrying its URL.
-            for attempt in 0...1 {
+            var recovery = HLSRecoveryPolicy()
+            while !Task.isCancelled {
+                let problem: Error
                 do {
                     guard try await self.hlsLive.prepare(api: api, camera: cameraID, configuration: configuration) else {
                         self.sourceFailed("Live HLS is disabled or unavailable for this camera. Refresh cameras or check its server status.")
@@ -106,17 +117,25 @@ final class LivePlaybackSession: ObservableObject {
                     guard self.generation == token, !Task.isCancelled else { self.hlsLive.stop(); return }
                     await self.hlsLive.run()
                     guard self.generation == token, !Task.isCancelled else { return }
-                    if self.hlsLive.lastHTTPStatus == 404 && attempt == 0 { continue }
-                    self.sourceFailed(self.hlsLive.error ?? "Live HLS ended. Reconnect to retry.",
-                        authenticationRequired: self.hlsLive.needsReauthentication)
-                    return
+                    problem = self.hlsLive.lastFailure ?? HLSPlaybackFailure.stalled
                 } catch {
                     guard self.generation == token, !Task.isCancelled else { return }
-                    if (error as? HorizonError)?.httpStatusCode == 404 && attempt == 0 { continue }
-                    self.sourceFailed(error.localizedDescription,
-                        authenticationRequired: LiveHLSGate.requiresReauthentication(error))
+                    problem = self.hlsLive.lastFailure ?? error
+                }
+                guard self.generation == token, !Task.isCancelled else { return }
+                guard let backoff = recovery.nextDelay(for: problem, jitter: Double.random(in: 0...1)) else {
+                    let prefix = recovery.attempts > 0 ? "Automatic HLS recovery exhausted. " : ""
+                    self.sourceFailed(prefix + problem.localizedDescription + " Reconnect after checking this camera's HLS status.",
+                        authenticationRequired: LiveHLSGate.requiresReauthentication(problem))
                     return
                 }
+                self.hlsLive.stop()
+                let delay = HLSRecoveryCoordinator.shared.reserve(backoff: backoff)
+                self.recoveryStatus = "Recovering HLS (\(recovery.attempts)/2) in \(Int(delay.rounded(.up))) s"
+                do { try await Task.sleep(for: .seconds(delay)) }
+                catch { return }
+                guard self.generation == token, !Task.isCancelled else { return }
+                self.recoveryStatus = nil
             }
         }
     }
@@ -140,6 +159,7 @@ final class LivePlaybackSession: ObservableObject {
     }
     private func suspend() {
         generation = UUID()
+        recoveryStatus = nil
         playback?.cancel()
         playback = nil
         hlsLive.stop()

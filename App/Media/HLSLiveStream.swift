@@ -13,9 +13,16 @@ final class HLSLiveStream: ObservableObject {
     @Published private(set) var advertisedHeights: [Int] = []
     @Published private(set) var metrics = "Awaiting decoded video"
     private(set) var lastHTTPStatus: Int?
+    private(set) var lastFailure: Error?
     private var openedAt = ProcessInfo.processInfo.systemUptime
     private var firstFrame: Double?
     private var transitions: [String] = []
+    private var measurements = HLSStartupMeasurements()
+    private var preparedStatus: LiveHLSStatus?
+    private var preparedPolicy: LiveHLSResourcePolicy?
+    private var preparedMasterURL: URL?
+    private var activeConfiguration: LiveHLSConfiguration?
+    private var lastMetricsPublishedAt = -Double.infinity
     private(set) var lastVideoReceivedAt: Date?
     var muted = true {
         didSet { player.isMuted = muted }
@@ -46,23 +53,34 @@ final class HLSLiveStream: ObservableObject {
         openedAt = ProcessInfo.processInfo.systemUptime
         firstFrame = nil
         transitions = []
+        measurements = HLSStartupMeasurements()
+        lastMetricsPublishedAt = -Double.infinity
+        metrics = measurements.report
         lastHTTPStatus = nil
+        lastFailure = nil
         let token = generation
         status = "Checking live HLS support"
         let policy = try LiveHLSResourcePolicy(address: api.address, camera: camera)
         startup = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
             guard let self, self.generation == token, self.resolution == nil else { return }
-            self.fail("Live HLS did not produce video in time. Reconnect to retry.")
+            self.fail(HLSPlaybackFailure.startupTimedOut.localizedDescription,
+                cause: HLSPlaybackFailure.startupTimedOut)
         }
         do {
             let capability: LiveHLSStatus
-            do { capability = try await api.liveHLSStatus(camera: camera) }
+            let statusStarted = ProcessInfo.processInfo.systemUptime
+            do {
+                capability = try await api.liveHLSStatus(camera: camera)
+                measurements.record(.statusFetch, seconds: ProcessInfo.processInfo.systemUptime - statusStarted)
+            }
             catch {
+                measurements.record(.statusFetch, seconds: ProcessInfo.processInfo.systemUptime - statusStarted)
+                metrics = measurements.report
                 if let failure = error as? HorizonError, let code = failure.httpStatusCode,
                    LiveHLSGate.isUnsupportedHTTP(code) {
                     startup?.cancel(); startup = nil
-                    status = "Live HLS is unsupported; using compatibility HTTPS"
+                    status = "This server does not advertise live HLS for this camera"
                     return false
                 }
                 throw error
@@ -71,16 +89,27 @@ final class HLSLiveStream: ObservableObject {
             guard generation == token else { throw CancellationError() }
             guard capability.isAvailable else {
                 startup?.cancel(); startup = nil
-                status = "Live HLS is unavailable; using compatibility HTTPS"
+                status = "Live HLS is disabled or unavailable for this camera"
                 return false
             }
-            advertisedHeights = Array(Set(capability.renditions.map(\.height).filter { $0 >= 720 })).sorted()
+            advertisedHeights = Array(Set(capability.renditions.map(\.height).filter { (144...2160).contains($0) })).sorted()
             _ = try policy.masterURL(capability.playlist)
             status = "Opening authenticated live HLS"
             let masterURL = try configuration.masterURL(status: capability, policy: policy)
+            preparedStatus = capability
+            preparedPolicy = policy
+            preparedMasterURL = masterURL
+            activeConfiguration = configuration
             let client = AuthenticatedLiveHLSClient(policy: policy, cookies: api.cookies,
                 maximumHeight: configuration.maximumHeight, masterURL: masterURL)
             self.client = client
+            client.setMeasurementHandler { [weak self] measurement in
+                Task { @MainActor in
+                    guard let self, self.generation == token else { return }
+                    self.measurements.record(measurement)
+                    self.updateMetrics()
+                }
+            }
             let master = try await client.prepareMaster()
             try Task.checkCancellation()
             guard generation == token else { throw CancellationError() }
@@ -95,7 +124,7 @@ final class HLSLiveStream: ObservableObject {
                 guard let self, self.generation == token else { return }
                 self.fail(failure.localizedDescription,
                     authenticationRequired: LiveHLSGate.requiresReauthentication(failure),
-                    httpStatus: (failure as? HorizonError)?.httpStatusCode)
+                    httpStatus: (failure as? HorizonError)?.httpStatusCode, cause: failure)
             }
             return true
         } catch {
@@ -103,8 +132,16 @@ final class HLSLiveStream: ObservableObject {
             client = nil
             startup?.cancel()
             startup = nil
+            updateMetrics()
             throw error
         }
+    }
+
+    func canReuse(_ configuration: LiveHLSConfiguration) -> Bool {
+        guard let preparedStatus, let preparedPolicy, let preparedMasterURL,
+              configuration.grid == activeConfiguration?.grid,
+              let requested = try? configuration.masterURL(status: preparedStatus, policy: preparedPolicy) else { return false }
+        return requested == preparedMasterURL
     }
 
     func run() async {
@@ -124,18 +161,27 @@ final class HLSLiveStream: ObservableObject {
                     }
                     let item = AVPlayerItem(asset: source.asset)
                     item.automaticallyPreservesTimeOffsetFromLive = true
+                    item.configuredTimeOffsetFromLive = CMTime(seconds: HLSPlaybackTuning.liveDelay, preferredTimescale: 600)
+                    item.canUseNetworkResourcesForLiveStreamingWhilePaused = false
                     startupPolicy = LiveHLSStartupPolicy(lowestBandwidth: master.lowestBandwidth)
                     item.preferredPeakBitRate = Double(master.lowestBandwidth)
-                    item.preferredForwardBufferDuration = 1
+                    item.preferredForwardBufferDuration = HLSPlaybackTuning.forwardBuffer(grid: activeConfiguration?.grid == true)
+                    player.automaticallyWaitsToMinimizeStalling = false
                     player.isMuted = muted
                     observations = [
                         item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
                             Task { @MainActor in
                                 guard let self, self.generation == token, self.player.currentItem === item else { return }
-                                if item.status == .readyToPlay { self.player.play() }
+                                if item.status == .readyToPlay {
+                                    self.measurements.record(.playerReady,
+                                        seconds: ProcessInfo.processInfo.systemUptime - self.openedAt)
+                                    self.updateMetrics()
+                                    self.player.play()
+                                }
                                 else if item.status == .failed {
                                     let code = item.error.map { ($0 as NSError).code } ?? 0
-                                    self.fail("AVPlayer HLS failed (code \(code)); errors \(item.errorLog()?.events.count ?? 0). If LL-HLS part durations changed, retain the server playlists for packager qualification.")
+                                    self.fail("AVPlayer HLS failed (code \(code)). Share playback diagnostics; LL-HLS packaging errors are not an authentication failure.",
+                                        cause: item.error)
                                 }
                             }
                         },
@@ -153,7 +199,7 @@ final class HLSLiveStream: ObservableObject {
                             .localizedDescription ?? "Live HLS stopped unexpectedly."
                         Task { @MainActor in
                             guard let self, self.generation == token else { return }
-                            self.fail(message)
+                            self.fail(message, cause: notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)
                         }
                     }
                     player.replaceCurrentItem(with: item)
@@ -188,18 +234,22 @@ final class HLSLiveStream: ObservableObject {
                             }
                             if let cap = self.startupPolicy?.preferredPeakBitRate { item.preferredPeakBitRate = cap }
                             if self.resolution != nil {
-                                self.status = self.recoveringEdge ? "Recovering live edge" :
+                                let nextStatus = self.recoveringEdge ? "Recovering live edge" :
                                     (playing ? "Live HLS / native adaptive bitrate" : "Buffering live HLS")
+                                if self.status != nextStatus { self.status = nextStatus }
                                 let stalledFor = ProcessInfo.processInfo.systemUptime - self.lastProgressUptime
                                 if !self.recoveringEdge, let window = item.seekableTimeRanges.last?.timeRangeValue,
                                    let target = self.edgePolicy.target(current: time.seconds,
                                     seekableStart: window.start.seconds, seekableEnd: CMTimeRangeGetEnd(window).seconds,
-                                    recommendedOffset: item.recommendedTimeOffsetFromLive.seconds, stalledFor: stalledFor,
+                                    recommendedOffset: max(HLSPlaybackTuning.liveDelay,
+                                        item.recommendedTimeOffsetFromLive.seconds.isFinite
+                                            ? item.recommendedTimeOffsetFromLive.seconds : HLSPlaybackTuning.liveDelay),
+                                    stalledFor: stalledFor,
                                     waiting: self.player.timeControlStatus == .waitingToPlayAtSpecifiedRate) {
                                     self.recoverLiveEdge(target: target, item: item, token: token)
                                 }
                                 if !self.recoveringEdge, stalledFor > 20 {
-                                    self.fail("Live HLS has stalled. Reconnect to retry; playback was not restarted automatically.")
+                                    self.fail(HLSPlaybackFailure.stalled.localizedDescription, cause: HLSPlaybackFailure.stalled)
                                 }
                             }
                         }
@@ -218,19 +268,32 @@ final class HLSLiveStream: ObservableObject {
         guard generation == token, playerLayer.isReadyForDisplay,
               let size = player.currentItem?.presentationSize,
               size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return }
-        if firstFrame == nil { firstFrame = ProcessInfo.processInfo.systemUptime - openedAt }
+        let isFirstFrame = firstFrame == nil
+        if isFirstFrame {
+            firstFrame = ProcessInfo.processInfo.systemUptime - openedAt
+            measurements.record(.firstDisplayedFrame, seconds: firstFrame ?? 0)
+            player.automaticallyWaitsToMinimizeStalling = true
+        }
         if resolution != size {
             resolution = size
             transitions.append("\(Int(size.width))x\(Int(size.height))")
             if transitions.count > 16 { transitions.removeFirst() }
         }
-        let access = player.currentItem?.accessLog()?.events.last
-        metrics = "First decoded frame: \((firstFrame ?? 0).formatted(.number.precision(.fractionLength(2)))) s; " +
-            "resolutions: \(transitions.joined(separator: " > ")); " +
-            "observed bps: \((access?.observedBitrate ?? 0).formatted()); indicated bps: \((access?.indicatedBitrate ?? 0).formatted()); " +
-            "stalls: \(access?.numberOfStalls ?? 0)"
+        updateMetrics(force: isFirstFrame)
         startup?.cancel()
         startup = nil
+    }
+
+    private func updateMetrics(force: Bool = false) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard force || now - lastMetricsPublishedAt >= 1 else { return }
+        lastMetricsPublishedAt = now
+        let access = player.currentItem?.accessLog()?.events.last
+        let errors = player.currentItem?.errorLog()?.events.suffix(8).map(\.errorStatusCode) ?? []
+        metrics = measurements.report + "\nDecoded resolutions: \(transitions.joined(separator: " > "))" +
+            "\nObserved bps: \((access?.observedBitrate ?? 0).formatted()); indicated bps: \((access?.indicatedBitrate ?? 0).formatted())" +
+            "\nStalls: \(access?.numberOfStalls ?? 0); dropped video frames: \(access?.numberOfDroppedVideoFrames ?? 0)" +
+            "\nAVPlayer error codes: \(errors)"
     }
 
     private func recoverLiveEdge(target: Double, item: AVPlayerItem, token: UUID) {
@@ -259,9 +322,11 @@ final class HLSLiveStream: ObservableObject {
         }
     }
 
-    private func fail(_ message: String, authenticationRequired: Bool = false, httpStatus: Int? = nil) {
+    private func fail(_ message: String, authenticationRequired: Bool = false, httpStatus: Int? = nil, cause: Error? = nil) {
+        updateMetrics(force: true)
         stop()
         lastHTTPStatus = httpStatus
+        lastFailure = cause ?? httpStatus.map { HorizonError.http($0) } ?? HorizonError.message(message)
         error = message
         needsReauthentication = authenticationRequired
         status = "Live HLS failed"
@@ -288,6 +353,10 @@ final class HLSLiveStream: ObservableObject {
         client?.invalidate()
         client = nil
         master = nil
+        preparedStatus = nil
+        preparedPolicy = nil
+        preparedMasterURL = nil
+        activeConfiguration = nil
         advertisedHeights = []
         startupPolicy = nil
         resolution = nil

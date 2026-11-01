@@ -148,7 +148,7 @@ final class AppModel: ObservableObject {
     }
 
     func reportSessionExpiry(from client: HorizonAPI) {
-        guard api === client, !isConnecting else { return }
+        guard api === client, !isConnecting, connectionIssue?.kind != .authentication else { return }
         recordConnectionFailure(HorizonError.unauthorized, generation: connectionGeneration)
     }
 

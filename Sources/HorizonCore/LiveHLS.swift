@@ -87,9 +87,9 @@ public struct LiveHLSConfiguration: Equatable, Sendable {
                 exactHeight: Int? = nil, grid: Bool = false, audio: Bool = true) {
         self.maximumHeight = maximumHeight
         self.requiresHLS = true
-        self.exactHeight = exactHeight
+        self.exactHeight = grid ? nil : exactHeight
         self.grid = grid
-        self.audio = audio
+        self.audio = grid ? false : audio
     }
 
     public func masterURL(status: LiveHLSStatus, policy: LiveHLSResourcePolicy) throws -> URL {
@@ -130,6 +130,7 @@ public struct LiveHLSStartupPolicy: Sendable {
     private let lowestBandwidth: Double
     private var healthySince: TimeInterval?
     private var lastObservation: TimeInterval?
+    private var decodedPlayingSince: TimeInterval?
     public private(set) var released = false
     public var preferredPeakBitRate: Double { released ? 0 : lowestBandwidth }
 
@@ -139,15 +140,24 @@ public struct LiveHLSStartupPolicy: Sendable {
                                  playing: Bool, restrictedNetwork: Bool) {
         guard now.isFinite, lastObservation.map({ now >= $0 }) ?? true else {
             healthySince = nil
+            decodedPlayingSince = nil
             return
         }
         lastObservation = now
         if restrictedNetwork {
             released = false
             healthySince = nil
+            decodedPlayingSince = nil
             return
         }
         guard !released else { return }
+        if decodedVideo && playing && bufferedAhead.isFinite && bufferedAhead >= 0 {
+            if decodedPlayingSince == nil { decodedPlayingSince = now }
+            if let decodedPlayingSince, now - decodedPlayingSince >= 8 {
+                released = true
+                return
+            }
+        } else { decodedPlayingSince = nil }
         guard decodedVideo, playing, bufferedAhead.isFinite, bufferedAhead >= 1 else {
             healthySince = nil
             return

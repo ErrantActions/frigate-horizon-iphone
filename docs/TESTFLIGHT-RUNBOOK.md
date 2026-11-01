@@ -1364,6 +1364,62 @@ AVPlayer error/access logs and treat it as a packager blocker, not auth failure
 or justification for another transport. No production NVR/settings/cameras,
 provider flags or other agent was touched.
 
+### Reliable HLS startup and multi-camera tuning
+
+The current tuning prioritizes a fast first displayed frame followed by stable
+buffering, not minimum live latency. AVPlayer starts without its automatic
+stall-wait gate, then enables that gate after decoded video appears. Requested
+forward buffers are three seconds for tiles and six for full-camera playback,
+with a six-second live-offset preference; original rendition clocks are never
+rebased. The startup bitrate cap still uses master `BANDWIDTH` in bits/second.
+It releases after the healthy-buffer interval, or after eight seconds of
+continuous decoded/playing video with a short LL-HLS buffer. Low Data Mode
+remains an explicit cap, not a reason to hold Auto low on ordinary cellular.
+
+Tiles ignore full-camera exact pins, force audio off and select their lowest
+advertised rung. Equivalent resolved master requests reuse the existing player,
+including unchanged status/config refreshes. Native scroll visibility and
+foreground eligibility still release unused assets, while intentional PiP
+retains its owning session. Resolution badges are removed; advertised quality
+controls, fullscreen and shareable playback diagnostics remain.
+
+Transient network/stall failures and HTTP 404/408/429/500/502/503/504 rebuild
+status and master at most twice. Backoff starts at one then three seconds plus
+bounded jitter, with a shared 750-ms recovery-slot spacing so a failed grid does
+not reconnect every camera at once. Cancellation during backoff cannot reopen a
+consumer. 401 requests the shared sign-in UI once; 403, certificate failures and
+unrecognized packaging/decoding errors do not enter a retry or transport loop.
+Exhaustion is explicit and offers manual reconnect.
+
+Diagnostics separately measure status request duration, first master request,
+first child playlist and advertised init-map request durations (including first
+body-byte timing), AVPlayer readiness, and first displayed frame since that
+attempt began. They include access-log observed/indicated bitrate, stalls,
+dropped video frames, numeric AVPlayer error codes and the observed sequence of
+`PART-TARGET` values. No URI, credential, camera name or private packager session
+is included. Rotating init names are classified from `EXT-X-MAP`, not guessed.
+Diagnostic publications are throttled to once per second except first-frame/
+failure milestones, avoiding unnecessary grid redraws.
+
+Notification attachment on an equivalent API/account updates authorization for
+private images without re-registering or resetting camera drafts. Auth renewal
+waits for an in-flight old registration to finish before reading current server
+choices, preventing a stale GET/renewal from undoing that explicit save. Missing
+installation metadata is shown as unregistered/unknown and still blocks implicit
+renewal; `camera_ids: []` remains an opt-out. Confidence, photo and original-
+quality download behavior are unchanged. No test push or server operation is
+performed by qualification.
+
+Actual phone acceptance is still required: simultaneous tiles, cold/warm first-
+frame stage reports, switching, Auto under throttling, pinned native 4K/audio,
+idle/resume, background/PiP and expired sessions. Tests with injected network
+delay establish instrumentation/recovery behavior, not real server or iPhone
+latency. Changing 4K `PART-TARGET` values are preserved and reported, not fixed
+client-side or disguised as authentication failure. No physical iPhone is
+available here to qualify native tolerance or collect production playlists;
+that remains an explicit device/packager acceptance blocker, not a diagnosed
+server defect.
+
 ### Automatic internal tester distribution
 
 Use **Owner Testing Auto**, the internal automatic-distribution group created
