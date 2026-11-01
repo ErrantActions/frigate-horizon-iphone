@@ -29,7 +29,48 @@ public struct RecordedMP4Range: Equatable, Sendable {
     }
 }
 
+private final class MP4Cookies: @unchecked Sendable {
+    private struct Key: Hashable {
+        let name: String
+        let domain: String
+        let path: String
+        init(_ cookie: HTTPCookie) {
+            name = cookie.name; domain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")); path = cookie.path
+        }
+    }
+    private let lock = NSLock()
+    private let address: ServerAddress
+    private var cookies: [Key: HTTPCookie] = [:]
+    init(_ initial: [HTTPCookie], address: ServerAddress) {
+        self.address = address
+        for cookie in initial { cookies[Key(cookie)] = cookie }
+    }
+    func headers(for url: URL) -> [String: String] {
+        lock.lock(); let values = Array(cookies.values); lock.unlock()
+        let scoped = SavedSession.cookiesForMedia(values, address: address).filter { cookie in
+            let path = cookie.path
+            return (!cookie.isSecure || url.scheme == "https") && path.hasPrefix("/") &&
+                (url.path == path || url.path.hasPrefix(path.hasSuffix("/") ? path : path + "/"))
+        }.sorted { $0.path.count > $1.path.count }
+        return HTTPCookie.requestHeaderFields(with: scoped)
+    }
+    func receive(_ response: HTTPURLResponse) {
+        guard let url = response.url, address.hasSameOrigin(as: url) else { return }
+        let headers = response.allHeaderFields.reduce(into: [String: String]()) { result, field in
+            if let key = field.key as? String, let value = field.value as? String { result[key] = value }
+        }
+        let updates = HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
+        lock.lock(); defer { lock.unlock() }
+        for cookie in updates {
+            if SavedSession.SavedCookie(cookie).restore(for: address) != nil { cookies[Key(cookie)] = cookie }
+            else { cookies.removeValue(forKey: Key(cookie)) }
+        }
+    }
+}
+
 private final class MP4ReadDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    let cookies: MP4Cookies
+    init(cookies: MP4Cookies) { self.cookies = cookies; super.init() }
     struct Read {
         let range: RecordedMP4Range
         let length: Int64
@@ -54,6 +95,7 @@ private final class MP4ReadDelegate: NSObject, URLSessionDataDelegate, @unchecke
         guard var read = reads[dataTask.taskIdentifier] else { lock.unlock(); completionHandler(.cancel); return }
         do {
             guard let http = response as? HTTPURLResponse else { throw HorizonError.unexpectedResponse }
+            cookies.receive(http)
             let size = Int(min(Int64(read.range.count), read.length - read.range.offset))
             try read.range.validate(status: http.statusCode, contentRange: http.value(forHTTPHeaderField: "Content-Range"),
                 length: read.length, bodyCount: http.statusCode == 416 ? 0 : size)
@@ -112,25 +154,30 @@ public final class AuthenticatedRecordedMP4Reader: @unchecked Sendable {
     public let mediaURL: URL
     public let length: Int64
     private let session: URLSession
-    private let delegate = MP4ReadDelegate()
+    private let delegate: MP4ReadDelegate
+    private let cookieStore: MP4Cookies
     public init(mediaURL: URL, info: RecordedHTTPMediaInfo, policy: RecordedHTTPResourcePolicy,
                 cookies: [HTTPCookie], configuration: URLSessionConfiguration = .ephemeral) throws {
         self.mediaURL = try policy.validate(mediaURL)
         try info.validate()
         length = info.length
+        let cookieStore = MP4Cookies(cookies, address: policy.address)
+        self.cookieStore = cookieStore
+        delegate = MP4ReadDelegate(cookies: cookieStore)
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.httpShouldSetCookies = true
         configuration.httpCookieAcceptPolicy = .always
         configuration.timeoutIntervalForRequest = 25
         configuration.timeoutIntervalForResource = 45
-        // Ephemeral URLSession configuration provides a memory-only cookie jar.
-        for cookie in cookies { configuration.httpCookieStorage?.setCookie(cookie) }
         session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
     }
     public func read(_ range: RecordedMP4Range) async throws -> Data {
         if range.offset >= length { return Data() }
         var request = URLRequest(url: mediaURL, cachePolicy: .reloadIgnoringLocalCacheData)
+        // URLSession protocol/custom-loader requests must carry observable auth themselves.
+        request.httpShouldHandleCookies = false
+        for (name, value) in cookieStore.headers(for: mediaURL) { request.setValue(value, forHTTPHeaderField: name) }
         request.setValue(range.header, forHTTPHeaderField: "Range")
         request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         let cancellation = MP4ReadCancellation()

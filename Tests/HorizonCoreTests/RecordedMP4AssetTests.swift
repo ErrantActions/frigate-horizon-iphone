@@ -33,7 +33,9 @@ private final class MP4FixtureProtocol: URLProtocol, @unchecked Sendable {
         let parts = request.value(forHTTPHeaderField: "Range")?.dropFirst(6).split(separator: "-")
         let start = parts.flatMap { Int($0[0]) } ?? 0
         let end = min(fixture.body.count - 1, parts.flatMap { $0.count > 1 ? Int($0[1]) : nil } ?? fixture.body.count - 1)
-        let status = fixture.status ?? (start >= fixture.body.count ? 416 : 206)
+        let cookie = request.value(forHTTPHeaderField: "Cookie") ?? ""
+        let authenticated = cookie.contains("session=fixture-only") || cookie.contains("good=fixture-only")
+        let status = fixture.status ?? (!authenticated ? 401 : (start >= fixture.body.count ? 416 : 206))
         let body = status == 206 && start <= end ? fixture.body.subdata(in: start..<end + 1) : Data()
         let headers = ["Content-Type": "video/mp4", "Content-Length": String(body.count),
             "Content-Range": status == 416 ? "bytes */\(fixture.body.count)" : "bytes \(start)-\(end)/\(fixture.body.count)"]
@@ -74,6 +76,27 @@ final class RecordedMP4AssetTests: XCTestCase {
         XCTAssertEqual(requests.count, 2)
         XCTAssertTrue(requests.allSatisfy { $0.value(forHTTPHeaderField: "Cookie")?.contains("session=fixture-only") == true })
         XCTAssertTrue(requests.allSatisfy { $0.value(forHTTPHeaderField: "Range") != nil })
+    }
+    func testCookiePropagationDoesNotIncludeExpiredForeignOrWrongPathCookies() async throws {
+        let body = Data(repeating: 0, count: 100), url = MP4FixtureProtocol.install(Data(repeating: 0, count: 100))
+        defer { MP4FixtureProtocol.remove(url) }
+        let cookies = try [
+            ("good", "fixture.invalid", "/proxy/api", 300.0),
+            ("expired", "fixture.invalid", "/proxy/api", -300.0),
+            ("foreign", "elsewhere.invalid", "/proxy/api", 300.0),
+            ("wrongpath", "fixture.invalid", "/proxy/apix", 300.0),
+        ].map { name, domain, path, expiry in
+            try XCTUnwrap(HTTPCookie(properties: [.name:name, .value:"fixture-only", .domain:domain,
+                .path:path, .secure:"TRUE", .expires:Date().addingTimeInterval(expiry)]))
+        }
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [MP4FixtureProtocol.self]
+        let reader = try AuthenticatedRecordedMP4Reader(mediaURL: url,
+            info: .init(length: 100, complete: true, immutable: true, fastStart: true, rangeSupported: true),
+            policy: RecordedHTTPResourcePolicy(address: ServerAddress("https://fixture.invalid/proxy")),
+            cookies: cookies, configuration: config)
+        defer { reader.close() }
+        _ = try await reader.read(RecordedMP4Range(offset: 0, count: 10))
+        XCTAssertEqual(MP4FixtureProtocol.requests(for: url).first?.value(forHTTPHeaderField: "Cookie"), "good=fixture-only")
     }
     func testExpiredSessionAndCameraDenialSurfaceWithoutAutomaticRefreshOrFallback() async throws {
         for status in [401,403] {

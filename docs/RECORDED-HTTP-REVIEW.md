@@ -48,7 +48,9 @@ the UI exposes none until qualified discovery supplies them.
   a private per-asset custom scheme. It supplies real content information and
   bounded reads; it is **not** the retired custom-scheme HLS experiment.
 - Its authenticated reader performs **every** range GET using a private
-  ephemeral cookie session seeded with existing secure API cookies. Public
+  memory-only cookie store seeded with existing secure API cookies and
+  `HTTPCookie.requestHeaderFields` on URLSession requests. Domain/path/security/
+  expiry matching is explicit and response cookie updates stay private. Public
   AVFoundation resource requests do not rely on private header options.
   Cancellation cancels the exact URLSession read; local shutdown clears the
   native item, cancels the asset/reader and issues owned close.
