@@ -403,14 +403,14 @@ struct LiveVideoView: View {
                     .background(reduceTransparency ? Color.black : Color.black.opacity(0.78), in: Capsule())
                     .foregroundStyle(.white).padding(12)
             }
-            .overlay(alignment: .bottomLeading) {
-                if showsPiPControl, resolution != nil {
-                    ShareLink(item: hlsLive.metrics) {
-                        Label("Playback metrics", systemImage: "waveform.path.ecg")
-                            .font(.caption).padding(8).background(.black.opacity(0.75), in: Capsule())
-                    }
-                    .foregroundStyle(.white).padding(8)
+        }
+        .overlay(alignment: .bottomLeading) {
+            if showsPiPControl, resolution != nil {
+                ShareLink(item: hlsLive.metrics) {
+                    Label("Playback metrics", systemImage: "waveform.path.ecg")
+                        .font(.caption).padding(8).background(.black.opacity(0.75), in: Capsule())
                 }
+                .foregroundStyle(.white).padding(8)
             }
         }
         .overlay(alignment: .topTrailing) {

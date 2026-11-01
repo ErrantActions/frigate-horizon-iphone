@@ -95,12 +95,12 @@ final class RecordingPlayer: ObservableObject {
                     guard let self, self.player.currentItem === item, time.seconds.isFinite else { return }
                     self.position = time.seconds
                 }
-                } catch {
-                    guard self.loadGeneration == token, !Task.isCancelled else { return }
-                    self.error = error.localizedDescription
-                    self.loading = false
-                }
-                }
+            }
+            } catch {
+                guard self.loadGeneration == token, !Task.isCancelled else { return }
+                self.error = error.localizedDescription
+                self.loading = false
+            }
             }
         } catch {
             self.error = error.localizedDescription
@@ -131,11 +131,6 @@ final class RecordingPlayer: ObservableObject {
         position = 0
     }
 
-    extension Notification.Name {
-        static let horizonMediaAuthenticationExpired = Notification.Name("Horizon.mediaAuthenticationExpired")
-        static let horizonMediaCleanupFailure = Notification.Name("Horizon.mediaCleanupFailure")
-    }
-
     func seek(to position: Double, autoplay: Bool? = nil) {
         guard position.isFinite, position >= 0 else {
             error = "The selected recording position is invalid."
@@ -158,6 +153,11 @@ final class RecordingPlayer: ObservableObject {
                 }
             }
     }
+}
+
+extension Notification.Name {
+    static let horizonMediaAuthenticationExpired = Notification.Name("Horizon.mediaAuthenticationExpired")
+    static let horizonMediaCleanupFailure = Notification.Name("Horizon.mediaCleanupFailure")
 }
 
 struct NativeRecordingSurface: UIViewControllerRepresentable {

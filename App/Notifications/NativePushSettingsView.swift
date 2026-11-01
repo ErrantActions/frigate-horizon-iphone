@@ -55,8 +55,8 @@ struct NativePushSettingsView: View {
             }
             .listRowBackground(HorizonPalette.surface)
             Section {
-                Toggle("All cameras allowed by my account", isOn: $allCameras)
-                    .onChange(of: allCameras) { _, _ in camerasEdited = true }
+                Toggle("All cameras allowed by my account", isOn: Binding(
+                    get: { allCameras }, set: { allCameras = $0; camerasEdited = true }))
                 if !allCameras {
                     ForEach(model.cameras) { camera in
                         Toggle(camera.name, isOn: Binding(
@@ -161,13 +161,10 @@ struct NativePushSettingsView: View {
             if scenePhase == .active { await push.refreshServerSupport() }
         }
         .refreshable { await push.refreshServerSupport() }
-        .onChange(of: model.cameras.map(\.id)) { _, ids in
-            // Permission changes must not turn a saved selection into [] during a refresh.
-        }
         .onAppear {
             if let cameras = push.savedCameraIDs {
                 allCameras = false
-                selectedCameras = Set(cameras).intersection(Set(model.cameras.map(\.id)))
+                selectedCameras = Set(cameras)
             }
         }
         .onChange(of: push.actualSelection) { _, selection in

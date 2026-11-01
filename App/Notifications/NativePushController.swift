@@ -167,8 +167,10 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
         if UserDefaults.standard.bool(forKey: "nativePushSelectedCameras") {
             return UserDefaults.standard.stringArray(forKey: "nativePushCameraIDs") ?? []
         }
+        return nil
+    }
 
-        private func loadInstallationSelection(api: HorizonAPI, token: UUID) async throws {
+    private func loadInstallationSelection(api: HorizonAPI, token: UUID) async throws {
             let devices: [NativePushDeviceMetadata] = try await api.get(["notifications", "apns", "devices"])
             guard generation == token, self.api === api else { throw CancellationError() }
             let id = try UUID(uuidString: installationID())
@@ -182,8 +184,6 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
                 UserDefaults.standard.set(device.cameraIDs != nil, forKey: "nativePushSelectedCameras")
                 UserDefaults.standard.set(device.cameraIDs ?? [], forKey: "nativePushCameraIDs")
             }
-        }
-        return nil
     }
 
     private var bindingMatches: Bool {
