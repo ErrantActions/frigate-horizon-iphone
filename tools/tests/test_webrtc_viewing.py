@@ -104,6 +104,11 @@ class TestWebRTCViewing(unittest.TestCase):
         self.assertTrue("RecordedViewingSession" not in core)
         self.assertTrue("positionEvents" not in core)
 
+    def test_recorded_http_public_helpers_are_not_nested_local_declarations(self):
+        core = source("Sources/HorizonCore/RecordedHTTP.swift")
+        self.assertTrue("\n    public func resolved(policy:" in core)
+        self.assertTrue("\n        public func" not in core)
+
     def test_pip_has_a_sample_buffer_renderer_not_an_avplayer_rtc_assumption(self):
         pip = source("App/Media/LivePictureInPictureController.swift")
         self.assertIn("sampleBufferDisplayLayer:", pip)

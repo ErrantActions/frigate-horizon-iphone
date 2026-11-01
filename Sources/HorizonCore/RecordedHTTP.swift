@@ -186,12 +186,12 @@ public struct RecordedHTTPWindow: Codable, Sendable {
                   width.map({ $0 > 0 }) ?? true, height.map({ $0 > 0 }) ?? true else { throw RecordedHTTPError.invalidWindow }
             _ = try RecordedHTTPMapping(spans: timeline)
         }
-        public func resolved(policy: RecordedHTTPResourcePolicy) throws -> Self {
-            Self(sessionID: sessionID, camera: camera, state: state, quality: quality, audio: audio,
-                statusURL: try policy.resolve(statusURL.relativeString), closeURL: try policy.resolve(closeURL.relativeString),
-                mediaURL: try mediaURL.map { try policy.resolve($0.relativeString) }, hardExpiresAt: hardExpiresAt,
-                timeline: timeline, width: width, height: height)
-        }
+    }
+    public func resolved(policy: RecordedHTTPResourcePolicy) throws -> Self {
+        Self(sessionID: sessionID, camera: camera, state: state, quality: quality, audio: audio,
+            statusURL: try policy.resolve(statusURL.relativeString), closeURL: try policy.resolve(closeURL.relativeString),
+            mediaURL: try mediaURL.map { try policy.resolve($0.relativeString) }, hardExpiresAt: hardExpiresAt,
+            timeline: timeline, width: width, height: height)
     }
 }
 
