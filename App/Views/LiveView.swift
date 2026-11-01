@@ -57,7 +57,7 @@ struct LiveView: View {
                                     favoriteAction: canEditPreferences ? {
                                         updatePreferences { try $0.toggleFavorite(camera.id) }
                                     } : nil,
-                                    adaptiveQuality: true
+                                    adaptiveQuality: true, tracksScrollVisibility: true
                                 )
                                 .aspectRatio(16 / 9, contentMode: .fit)
                                 .overlay(alignment: .bottomLeading) {
@@ -340,6 +340,7 @@ struct LiveVideoView: View {
     var maximumQualityHeight: Int? = nil
     var onHLSHeightsChanged: (([Int]) -> Void)? = nil
     var exactHLSHeight: Int? = nil
+    var tracksScrollVisibility = false
     @EnvironmentObject private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -465,7 +466,12 @@ struct LiveVideoView: View {
         } message: {
             Text(playback.pictureInPictureError ?? "")
         }
-        .onAppear { visible = true; playback.attach(viewer) }
+        .onAppear { visible = !tracksScrollVisibility; playback.attach(viewer) }
+        .onScrollVisibilityChange(threshold: 0.01) { isVisible in
+            guard tracksScrollVisibility else { return }
+            visible = isVisible
+            if !isVisible { playback.deactivateInlineViewer(viewer) }
+        }
         .onDisappear {
             visible = false
             playback.detach(viewer)

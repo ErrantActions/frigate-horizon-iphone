@@ -25,6 +25,9 @@ class TestHLSIntegration(unittest.TestCase):
         self.assertNotIn("HTTPSVideoSurface", live)
         self.assertIn("grid: !expandedQuality", live)
         self.assertIn("exactHLSHeight", live)
+        self.assertIn("tracksScrollVisibility: true", live)
+        self.assertIn(".onScrollVisibilityChange(threshold: 0.01)", live)
+        self.assertIn("if !isVisible { playback.deactivateInlineViewer(viewer) }", live)
 
     def test_recorded_viewing_is_hls_and_original_download_is_unchanged(self):
         exports = source("App/Views/ExportsView.swift")

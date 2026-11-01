@@ -1281,6 +1281,10 @@ recording players unless intentionally owning PiP. Server producer shutdown
 may lag the final request by up to 60 seconds. Player metric sharing includes
 first decoded-frame latency, observed/indicated bitrate, stall count and decoded
 resolution transitions, not URLs/cookies/account identifiers.
+Grid consumers additionally follow native scroll-visibility callbacks (one
+percent visible threshold); lazy-grid prefetch/retention alone does not grant
+playback ownership. Camera detail and explicit tour viewers keep their separate
+foreground/PiP ownership rather than depending on a grid scroll container.
 
 Notification support/auth refresh first reads the existing installation's
 `camera_ids`. Registration renewal uses the confirmed value, preserving
