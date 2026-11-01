@@ -13,7 +13,7 @@
 "viewer.payload" = "The server rejected the viewing request. Update the app/server contract.";
 "viewer.capacity" = "The server's shared viewing/encoder capacity is in use. Close another viewer before retrying.";
 "viewer.cleanup" = "Local playback stopped, but owned viewer deletion is unconfirmed. Its lease is only a safeguard; retry cleanup before assuming server work ended.";
-"viewer.unknownCreation" = "The server accepted viewer creation without a usable session identity. Cleanup cannot be confirmed; no creation replay was attempted.";
+"viewer.unknownCreation" = "Viewer creation has no confirmed session identity. Cleanup cannot be confirmed; no creation replay was attempted.";
 "viewer.waiting" = "WebRTC viewer stopped";
 "viewer.discovering" = "Checking WebRTC viewing support";
 "viewer.connecting" = "Connecting WebRTC";

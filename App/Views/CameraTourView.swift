@@ -146,15 +146,9 @@ struct CameraTourView: View {
         }
         .task(id: timedPlan) {
             guard let plan = timedPlan else { return }
-            // Only one incoming stream is attached, at full size behind the outgoing video.
-            let lead = min(3, plan.seconds)
-            do { try await Task.sleep(for: .seconds(plan.seconds - lead)) }
+            do { try await Task.sleep(for: .seconds(plan.seconds)) }
             catch { return }
             guard !Task.isCancelled, timedPlan == plan, let next = playback.neighbor(offset: 1) else { return }
-            playback.preload(next)
-            do { try await Task.sleep(for: .seconds(lead)) }
-            catch { return }
-            guard !Task.isCancelled, timedPlan == plan else { return }
             requestSwitch(to: next)
         }
         .task(id: motionPlan) {
@@ -185,7 +179,7 @@ struct CameraTourView: View {
         GeometryReader { geometry in
             ZStack {
                 Color.black
-                ForEach(playback.slots) { slot in
+                ForEach(playback.current.map { [$0] } ?? []) { slot in
                     if let candidate = cameras.first(where: { $0.id == slot.cameraID }) {
                         LiveVideoView(api: api, camera: candidate, stream: candidate.preferredStream(expanded: true),
                             active: foreground, muted: true,
@@ -315,7 +309,7 @@ struct CameraTourView: View {
 
     private func requestSwitch(to cameraID: String) {
         failedCameraID = nil
-        playback.request(cameraID)
+        playback.selectWithoutPreload(cameraID)
         if playback.incoming == nil, playback.current?.failed == true {
             failedCameraID = playback.current?.cameraID
         }
@@ -328,7 +322,7 @@ struct CameraTourView: View {
         guard let target = failedCameraID else { return }
         failedCameraID = nil
         if target == playback.current?.cameraID { playback.retryCurrent() }
-        else { playback.request(target) }
+        else { playback.selectWithoutPreload(target) }
         revealHUD()
     }
 

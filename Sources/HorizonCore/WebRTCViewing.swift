@@ -9,6 +9,11 @@ public enum ViewingMessage {
     public static var failed: String { String(localized: "viewer.failed", defaultValue: "WebRTC playback could not connect. Check media runtime, ICE routes and relay readiness, then retry.") }
 }
 
+public enum ViewerTransportFailure: LocalizedError {
+    case connectionLost, negotiationTimedOut
+    public var errorDescription: String? { ViewingMessage.failed }
+}
+
 public struct ViewingFeatures: Decodable, Sendable {
     public let liveWebRTC: LiveWebRTCFeature?
     enum CodingKeys: String, CodingKey { case liveWebRTC = "live_webrtc" }
@@ -87,6 +92,7 @@ public struct ViewerConfiguration: Equatable, Sendable {
         self.dataSaver = dataSaver; self.forceRelay = forceRelay
     }
     public func creation(status: LiveWebRTCStatus) throws -> ViewerCreateBody {
+        guard !forceRelay || status.relayAvailable else { throw HorizonError.message(ViewingMessage.unavailable) }
         if grid {
             return ViewerCreateBody(view: "grid", height: status.gridHeight, maxHeight: nil, audio: false, forceRelay: forceRelay)
         }
@@ -257,6 +263,10 @@ public struct ViewerSessionDescription: Decodable, Sendable {
         for rendition in renditions { try rendition.validate() }
         try offer.validate(expected: "offer")
         for server in iceServers { try Self.validateICE(server) }
+        if iceTransportPolicy == "relay",
+           !iceServers.contains(where: { $0.urls.contains { $0.hasPrefix("turn:") || $0.hasPrefix("turns:") } }) {
+            throw HorizonError.message(ViewingMessage.invalid)
+        }
         for candidate in iceCandidates {
             _ = try ViewerCandidate(candidate: candidate.candidate, sdpMLineIndex: candidate.sdpMLineIndex,
                 sdpMid: candidate.sdpMid, usernameFragment: candidate.usernameFragment)

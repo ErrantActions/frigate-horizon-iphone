@@ -79,15 +79,15 @@ final class LivePlaybackSession: ObservableObject {
             $0.forceRelay == configuration.forceRelay
         } ?? false
         let sourceChanged = apiIdentity != ObjectIdentifier(api) || selection?.cameraID != cameraID || !sameEnvelope
-        let retained = pip.owns(self) && apiIdentity == ObjectIdentifier(api) && selection?.cameraID == cameraID
-        if sourceChanged && !retained {
+        if sourceChanged {
+            if pip.owns(self) { pip.stop() }
             suspend(); apiIdentity = ObjectIdentifier(api)
             failure = nil; paused = false; needsReauthentication = false
         }
         if !sourceChanged, viewerConfiguration?.exactHeight != configuration.exactHeight {
             rtcViewer.setQuality(configuration.dataSaver && !configuration.grid ? 720 : configuration.exactHeight)
         }
-        if !retained { viewerConfiguration = configuration }
+        viewerConfiguration = configuration
         selection = .init(cameraID: cameraID, stream: "", transport: "webrtc", muted: muted)
         rtcViewer.muted = muted
         guard hasInlineViewer || pip.isPlaying(self) else { suspend(); return }
@@ -104,7 +104,7 @@ final class LivePlaybackSession: ObservableObject {
                     guard self.rtcViewer.error != nil, !self.rtcViewer.isRunning else { continue }
                     let problem = self.rtcViewer.lastFailure
                     let code = (problem as? HorizonError)?.httpStatusCode
-                    if attempt < 2 && [410,503,502,504].contains(code ?? 0) { break }
+                    if attempt < 2 && (problem is ViewerTransportFailure || [404,409,410,503,502,504].contains(code ?? 0)) { break }
                     self.sourceFailed(self.rtcViewer.error ?? ViewingMessage.failed,
                         authenticationRequired: code == 401)
                     return

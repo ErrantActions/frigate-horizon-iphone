@@ -51,7 +51,7 @@ final class ViewerCleanupStore: ObservableObject {
     }
     func unidentifiedCreation() {
         unidentified = true
-        error = String(localized: "viewer.unknownCreation", defaultValue: "The server accepted viewer creation without a usable session identity. Cleanup cannot be confirmed; no creation replay was attempted.")
+        error = String(localized: "viewer.unknownCreation", defaultValue: "Viewer creation has no confirmed session identity. Cleanup cannot be confirmed; no creation replay was attempted.")
     }
 }
 
@@ -84,6 +84,8 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
     private var startup: Task<Void, Never>?
     private var statisticsTask: Task<Void, Never>?
     private var qualityTask: Task<Void, Never>?
+    private struct QualityIntent { let height: Int? }
+    private var pendingQuality: QualityIntent?
     private var ownership = ViewerOwnershipState()
     private var generation: UUID { ownership.generation }
     private var candidateQueue = ViewerCandidateQueue()
@@ -159,7 +161,14 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
                 // Creation is not canceled in flight: a late 201 still needs its exact DELETE.
                 let creation = Task { try await api.viewerRequest(url, method: "POST",
                     body: JSONEncoder().encode(body), success: [201]) }
-                let created = try await creation.value
+                let created: Data
+                do { created = try await creation.value }
+                catch {
+                    if (error as? HorizonError)?.httpStatusCode == nil {
+                        ViewerCleanupStore.shared.unidentifiedCreation()
+                    }
+                    throw error
+                }
                 let identity: ViewerSessionIdentity
                 do { identity = try JSONDecoder().decode(ViewerSessionIdentity.self, from: created) }
                 catch { ViewerCleanupStore.shared.unidentifiedCreation(); throw HorizonError.message(ViewingMessage.invalid) }
@@ -212,7 +221,7 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
         startup = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(25)) } catch { return }
             guard let self, self.generation == token, self.resolution == nil else { return }
-            self.fail(HorizonError.message(ViewingMessage.failed))
+            self.fail(ViewerTransportFailure.negotiationTimedOut)
         }
         if configuration?.audio == true {
             RTCAudioSession.sharedInstance().useManualAudio = true
@@ -252,7 +261,7 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
         guard candidateQueue.hasReadyBatch, candidatesTask == nil else { return }
         candidatesTask = Task { [weak self] in
             guard let self else { return }
-            defer { self.candidatesTask = nil }
+            defer { if self.generation == token { self.candidatesTask = nil } }
             while self.generation == token, !Task.isCancelled, self.candidateQueue.hasReadyBatch {
                 guard let owner = self.owner else { return }
                 let batch = self.candidateQueue.takeBatch()
@@ -317,15 +326,24 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
     }
 
     func setQuality(_ height: Int?) {
-        guard qualityTask == nil, let owner else { return }
+        guard let owner else { return }
         guard height.map({ advertisedHeights.contains($0) }) ?? true else {
             error = viewingFailureMessage(HorizonError.http(404)); return
         }
+        if qualityTask != nil { pendingQuality = QualityIntent(height: height); return }
         let token = generation
         qualityUpdating = true
         qualityTask = Task { [weak self] in
             guard let self else { return }
-            defer { self.qualityUpdating = false; self.qualityTask = nil }
+            defer {
+                if self.generation == token {
+                    self.qualityUpdating = false; self.qualityTask = nil
+                    if let next = self.pendingQuality {
+                        self.pendingQuality = nil
+                        self.setQuality(next.height)
+                    }
+                }
+            }
             struct Body: Encodable {
                 let height: Int?
                 func encode(to encoder: Encoder) throws {
@@ -371,9 +389,12 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
     private func fail(_ failure: Error) {
         let message = viewingFailureMessage(failure)
         let auth = (failure as? HorizonError)?.httpStatusCode == 401
+        let network = failure as? URLError
+        let knownSessionNetworkFailure = owner != nil &&
+            (network?.code == .timedOut || network?.code == .networkConnectionLost || network?.code == .cannotConnectToHost)
         stop()
         error = message; needsReauthentication = auth
-        lastFailure = failure
+        lastFailure = knownSessionNetworkFailure ? ViewerTransportFailure.connectionLost : failure
         status = message
     }
 
@@ -386,6 +407,7 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
         startup?.cancel(); startup = nil
         statisticsTask?.cancel(); statisticsTask = nil
         qualityTask?.cancel(); qualityTask = nil
+        pendingQuality = nil
         qualityUpdating = false
         videoTrack?.remove(frameObserver); videoTrack = nil
         frameObserver.reset()
@@ -446,7 +468,7 @@ extension OwnedWebRTCViewer: RTCPeerConnectionDelegate {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
         Task { @MainActor in
             guard self.peer === peerConnection else { return }
-            if newState == .failed { self.fail(HorizonError.message(ViewingMessage.failed)) }
+            if newState == .failed { self.fail(ViewerTransportFailure.connectionLost) }
         }
     }
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams: [RTCMediaStream]) {

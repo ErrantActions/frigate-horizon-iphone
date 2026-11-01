@@ -105,7 +105,8 @@ final class WebRTCViewingTests: XCTestCase {
             configuration: .init(grid: false, maximumHeight: 720, dataSaver: true), now: 1000))
         XCTAssertThrowsError(try session().validate(policy: policy(),
             configuration: .init(grid: false, forceRelay: true), now: 1000))
-        XCTAssertNoThrow(try session(["ice_transport_policy":"relay"]).validate(policy: policy(),
+        XCTAssertNoThrow(try session(["ice_transport_policy":"relay",
+            "ice_servers":[["urls":["turns:relay.invalid:5349?transport=tcp"],"username":"temporary","credential":"ephemeral"]]]).validate(policy: policy(),
             configuration: .init(grid: false, forceRelay: true), now: 1000))
     }
 
@@ -177,5 +178,17 @@ final class WebRTCViewingTests: XCTestCase {
         XCTAssertEqual(Set(statuses.map { viewingFailureMessage(HorizonError.http($0)) }).count, statuses.count)
         XCTAssertTrue(viewingFailureMessage(HorizonError.http(401)).contains("Sign in"))
         XCTAssertFalse(viewingFailureMessage(HorizonError.http(403)).contains("Sign in"))
+    }
+
+    func testTourSwitchesWithoutRetainingAnInvisibleIncomingViewer() {
+        var playback = CameraTourPlayback(cameraIDs: ["front", "garden"])
+        playback.selectWithoutPreload("garden")
+        XCTAssertEqual(playback.current?.cameraID, "garden")
+        XCTAssertEqual(playback.slots.count, 1)
+        XCTAssertNil(playback.incoming)
+        XCTAssertFalse(playback.current?.ready ?? true)
+        let original = playback
+        playback.selectWithoutPreload("not_allowed")
+        XCTAssertEqual(playback, original)
     }
 }

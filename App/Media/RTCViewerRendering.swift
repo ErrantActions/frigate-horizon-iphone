@@ -42,20 +42,45 @@ final class RTCViewerFrameObserver: NSObject, RTCVideoRenderer, @unchecked Senda
 struct NativeRTCViewerSurface: UIViewRepresentable {
     let track: RTCVideoTrack?
     var fillVideo = false
+    var pipLayer: AVSampleBufferDisplayLayer? = nil
     func makeCoordinator() -> Coordinator { Coordinator() }
-    func makeUIView(context: Context) -> RTCMTLVideoView { RTCMTLVideoView(frame: .zero) }
-    func updateUIView(_ view: RTCMTLVideoView, context: Context) {
-        view.videoContentMode = fillVideo ? .scaleAspectFill : .scaleAspectFit
+    func makeUIView(context: Context) -> RTCViewerHost { RTCViewerHost(pipLayer: pipLayer) }
+    func updateUIView(_ view: RTCViewerHost, context: Context) {
+        view.video.videoContentMode = fillVideo ? .scaleAspectFill : .scaleAspectFit
         if context.coordinator.track !== track {
-            context.coordinator.track?.remove(view)
+            context.coordinator.track?.remove(view.video)
             context.coordinator.track = track
-            track?.add(view)
+            if let track { track.add(view.video) } else { view.video.renderFrame(nil) }
         }
     }
-    static func dismantleUIView(_ view: RTCMTLVideoView, coordinator: Coordinator) {
-        coordinator.track?.remove(view); coordinator.track = nil
+    static func dismantleUIView(_ view: RTCViewerHost, coordinator: Coordinator) {
+        coordinator.track?.remove(view.video); coordinator.track = nil
+        view.video.renderFrame(nil)
+        if view.pipLayer?.superlayer === view.layer { view.pipLayer?.removeFromSuperlayer() }
     }
     final class Coordinator { var track: RTCVideoTrack? }
+}
+
+final class RTCViewerHost: UIView {
+    let video = RTCMTLVideoView(frame: .zero)
+    let pipLayer: AVSampleBufferDisplayLayer?
+    init(pipLayer: AVSampleBufferDisplayLayer?) {
+        self.pipLayer = pipLayer
+        super.init(frame: .zero)
+        backgroundColor = .black
+        if let pipLayer { layer.addSublayer(pipLayer) }
+        addSubview(video)
+    }
+    required init?(coder: NSCoder) { return nil }
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        video.frame = bounds
+        if pipLayer?.superlayer === layer {
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            pipLayer?.frame = bounds
+            CATransaction.commit()
+        }
+    }
 }
 
 final class RTCViewerPiPRenderer: NSObject, RTCVideoRenderer, @unchecked Sendable {
@@ -149,6 +174,9 @@ final class RTCViewerPiPRenderer: NSObject, RTCVideoRenderer, @unchecked Sendabl
                 .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
         } else {
             let source = frame.buffer.toI420()
+            guard source.width > 0, source.height > 0, source.chromaWidth > 0, source.chromaHeight > 0,
+                  source.strideY >= source.width, source.strideU >= source.chromaWidth,
+                  source.strideV >= source.chromaWidth else { throw RenderFailure.invalid }
             let raw = try allocate(width: Int(source.width), height: Int(source.height),
                 format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
             guard CVPixelBufferLockBaseAddress(raw, []) == kCVReturnSuccess else { throw RenderFailure.invalid }

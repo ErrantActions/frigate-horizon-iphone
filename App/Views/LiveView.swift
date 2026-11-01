@@ -358,6 +358,7 @@ struct LiveVideoView: View {
     private var rtc: OwnedWebRTCViewer { playback.rtcViewer }
     private var allowedCamera: HorizonCamera? { model.cameras.first { $0.id == camera.id } }
     private var playbackEnabled: Bool { allowedCamera?.settings.enabled == true }
+    private var needsReauthentication: Bool { playback.needsReauthentication || rtc.needsReauthentication }
     private var playbackQuality: LivePlaybackQuality? {
         nil
     }
@@ -375,7 +376,10 @@ struct LiveVideoView: View {
     var body: some View {
         ZStack {
             Color.black
-            NativeRTCViewerSurface(track: rtc.videoTrack, fillVideo: fillVideo).id(ObjectIdentifier(playback))
+            if playbackEnabled {
+                NativeRTCViewerSurface(track: rtc.videoTrack, fillVideo: fillVideo,
+                    pipLayer: showsPiPControl ? rtc.pipRenderer.displayLayer : nil).id(ObjectIdentifier(playback))
+            }
             if !playbackEnabled {
                 Label("Camera disabled", systemImage: "video.slash")
                     .foregroundStyle(.white)
@@ -442,7 +446,7 @@ struct LiveVideoView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if playback.needsReauthentication, model.profile != nil {
+            if needsReauthentication, model.profile != nil {
                 Button("Sign in again", systemImage: "person.crop.circle.badge.checkmark") {
                     showReauthentication = true
                 }
@@ -483,7 +487,7 @@ struct LiveVideoView: View {
         .onChange(of: muted, initial: true) { _, value in rtc.muted = value }
         .onChange(of: resolution != nil, initial: true) { _, value in onVideoReady?(value) }
         .onChange(of: playbackError, initial: true) { _, value in onPlaybackFailure?(value) }
-        .onChange(of: playback.needsReauthentication, initial: true) { _, needed in
+        .onChange(of: needsReauthentication, initial: true) { _, needed in
             if needed { model.reportSessionExpiry(from: api) }
         }
         .sheet(isPresented: $showReauthentication) {
@@ -618,7 +622,7 @@ struct CameraDetailView: View {
                                 Menu {
                                     Picker("Automatic maximum", selection: $automaticMaximumHeight) {
                                         Text("No display cap").tag(0)
-                                        ForEach(heights, id: \.self) { height in
+                                        ForEach(heights.filter { [720,1080,2160].contains($0) }, id: \.self) { height in
                                             Text("\(height)p").tag(height)
                                         }
                                         if automaticMaximumHeight != 0,

@@ -124,6 +124,12 @@ final class LivePictureInPictureController: NSObject, ObservableObject {
         guard let track = value.rtcViewer.videoTrack else { fail(ViewingMessage.failed); return }
         value.rtcViewer.pipRenderer.onFailure = { [weak self] in self?.fail(ViewingMessage.failed) }
         value.rtcViewer.pipRenderer.follow(track)
+        trackObservation = value.rtcViewer.$videoTrack.sink { [weak self, weak value] track in
+            Task { @MainActor in
+                guard let self, let value, self.owns(value), let track else { return }
+                value.rtcViewer.pipRenderer.follow(track)
+            }
+        }
         let source = AVPictureInPictureController.ContentSource(
             sampleBufferDisplayLayer: value.rtcViewer.pipRenderer.displayLayer, playbackDelegate: self)
         controller = AVPictureInPictureController(contentSource: source)

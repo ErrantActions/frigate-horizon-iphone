@@ -36,13 +36,14 @@ class TestWebRTCViewing(unittest.TestCase):
     def test_owned_lifecycle_accounts_for_late_creation_and_awaits_cleanup(self):
         peer = source("App/Media/OwnedWebRTCViewer.swift")
         self.assertIn("let creation = Task", peer)
-        self.assertIn("let created = try await creation.value", peer)
+        self.assertIn("created = try await creation.value", peer)
         self.assertIn("ownership.acceptCreated", peer)
         self.assertIn("await previousWorker?.value", peer)
         self.assertIn("ViewerCleanupStore.shared.drain()", peer)
         self.assertIn('method: "DELETE"', peer)
         self.assertIn("self.lease.renew(update", peer)
         self.assertIn("self.lease.isValid", peer)
+        self.assertIn("ViewerCleanupStore.shared.unidentifiedCreation()", peer)
 
     def test_quality_patch_does_not_create_a_new_peer_or_offer(self):
         peer = source("App/Media/OwnedWebRTCViewer.swift")
@@ -52,6 +53,8 @@ class TestWebRTCViewing(unittest.TestCase):
         self.assertNotIn("peerConnection(", quality)
         self.assertNotIn("negotiate(", quality)
         self.assertIn("sameEnvelope", source("App/Media/LivePlaybackSession.swift"))
+        self.assertIn("pendingQuality = QualityIntent(height: height)", peer)
+        self.assertIn("self.setQuality(next.height)", peer)
 
     def test_recorded_viewing_has_no_production_media_or_mock_adapter(self):
         player = source("App/Media/RecordingPlayer.swift")
@@ -72,6 +75,8 @@ class TestWebRTCViewing(unittest.TestCase):
         renderer = source("App/Media/RTCViewerRendering.swift")
         self.assertIn("CMSampleBufferCreateReadyWithImageBuffer", renderer)
         self.assertIn("RTCMTLVideoView", renderer)
+        self.assertIn("layer.addSublayer(pipLayer)", renderer)
+        self.assertIn("view.video.renderFrame(nil)", renderer)
 
     def test_viewer_auth_disallows_redirects_and_preserves_csrf_cookie_session(self):
         api = source("App/Networking/HorizonAPI.swift")
@@ -94,3 +99,15 @@ class TestWebRTCViewing(unittest.TestCase):
         self.assertNotIn("SessionVault", peer)
         self.assertIn('"candidateType"', peer)
         self.assertIn('"relayProtocol"', peer)
+
+    def test_tour_does_not_open_an_invisible_incoming_pipeline(self):
+        tour = source("App/Views/CameraTourView.swift")
+        self.assertNotIn("playback.preload(", tour)
+        self.assertIn("playback.selectWithoutPreload", tour)
+        self.assertIn("ForEach(playback.current.map", tour)
+
+    def test_ownership_helpers_are_top_level_not_nested_unused_declarations(self):
+        core = source("Sources/HorizonCore/WebRTCViewing.swift")
+        self.assertIn("\npublic struct ViewerOwnershipState", core)
+        self.assertIn("\npublic func viewingFailureMessage", core)
+        self.assertNotIn("\n        public struct ViewerOwnershipState", core)

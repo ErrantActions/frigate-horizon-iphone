@@ -50,6 +50,9 @@ does not promise NVIDIA acceleration.
   unless retained by explicit PiP. Server leases are only a crash/loss safeguard;
   DELETE is attempted for each known owner. Failed deletion is retained and can
   be retried from the app-level cleanup notice before starting another pipeline.
+- Camera Tour switches its single active camera without an invisible incoming
+  warmup peer. This intentionally trades the old preloaded handoff for strict
+  on-demand ownership. Normal camera/rate/quality changes never alter recordings.
 - Native inline rendering uses RTCMTLVideoView. PiP renders the same decoded
   track through AVSampleBufferDisplayLayer, with bounded frame delivery and
   rendering-only color/crop/orientation conversion, not a second peer, decoder,

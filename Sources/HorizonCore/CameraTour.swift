@@ -102,6 +102,11 @@ public struct CameraTourPlayback: Equatable, Sendable {
     public private(set) var handoffRequested = false
 
     public init(cameraIDs: [String] = []) { update(cameraIDs: cameraIDs) }
+    public mutating func selectWithoutPreload(_ cameraID: String) {
+        guard cameraIDs.contains(cameraID) else { return }
+        cancelIncoming()
+        current = CameraTourSlot(cameraID: cameraID)
+    }
     public var slots: [CameraTourSlot] { [current, incoming].compactMap { $0 } }
     public var position: Int? { current.flatMap { cameraIDs.firstIndex(of: $0.cameraID).map { $0 + 1 } } }
 
