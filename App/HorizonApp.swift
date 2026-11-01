@@ -28,6 +28,12 @@ struct HorizonApp: App {
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { Task { await model.refresh() } }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .horizonMediaAuthenticationExpired)) { notification in
+                if let api = notification.object as? HorizonAPI { model.reportSessionExpiry(from: api) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .horizonMediaCleanupFailure)) { notification in
+                if let message = notification.object as? String { model.error = message }
+            }
             .task(id: "\(model.api.map { String(describing: ObjectIdentifier($0)) } ?? "")-\(model.profile?.username ?? "")-\(model.profile?.role ?? "")-\(model.cameras.map { "\($0.id):\($0.settings.enabled):\($0.settings.ui?.liveHLS == true):\($0.settings.live.streams.values.sorted())" }.joined(separator: ","))") {
                 let account = model.api.flatMap { api in
                     model.profile.map { HorizonAccountScope.key(server: api.address.url.absoluteString, username: $0.username) }

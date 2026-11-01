@@ -62,6 +62,41 @@ final class AuthenticatedLiveHLSTests: XCTestCase {
             XCTAssertTrue(request.value(forHTTPHeaderField: "Cookie")?.contains("synthetic-session") == true)
             return (200, ["Content-Type": "video/mp4"], Data([1, 2, 3, 4]))
         }
+
+        func testEveryPlaylistAndMediaResourceReauthenticatesWithoutSharedCache() async throws {
+            var calls = 0
+            HLSFixtureProtocol.handler = { request in
+                calls += 1
+                XCTAssertTrue(request.value(forHTTPHeaderField: "Cookie")?.contains("synthetic-session") == true)
+                XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
+                let playlist = request.url?.pathExtension == "m3u8"
+                return (200, ["Content-Type": playlist ? "application/vnd.apple.mpegurl" : "video/mp4"],
+                    playlist ? Data("#EXTM3U\n#EXTINF:2,\nrotated.mp4\n".utf8) : Data([1, 2]))
+            }
+            for path in ["720p/video.m3u8", "720p/audio.m3u8", "720p/init.mp4",
+                         "720p/segment.mp4", "720p/audio.mp4", "720p/part.mp4"] {
+                _ = try await client.load(policy.resolve(path, relativeTo: policy.canonicalMaster))
+            }
+            XCTAssertEqual(calls, 6)
+        }
+
+        func testAChild403DoesNotTriggerSignInAndAChild404IsNotRetriedByLoader() async throws {
+            for code in [401, 403, 404] {
+                var calls = 0
+                HLSFixtureProtocol.handler = { _ in
+                    calls += 1
+                    return (code, ["Content-Type":"text/html"], Data("<html>error</html>".utf8))
+                }
+                do {
+                    _ = try await client.load(policy.resolve("720p/rotated.mp4", relativeTo: policy.canonicalMaster))
+                    XCTFail("Child failure must not appear successful")
+                } catch {
+                    XCTAssertEqual((error as? HorizonError)?.httpStatusCode, code)
+                    XCTAssertEqual(LiveHLSGate.requiresReauthentication(error), code == 401)
+                }
+                XCTAssertEqual(calls, 1)
+            }
+        }
         for path in ["720p/init.mp4", "720p/part-1.mp4", "720p/audio-part-1.mp4"] {
             let url = try policy.resolve(path, relativeTo: policy.canonicalMaster)
             let resource = try await client.load(url)

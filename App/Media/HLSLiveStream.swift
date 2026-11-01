@@ -11,6 +11,11 @@ final class HLSLiveStream: ObservableObject {
     @Published private(set) var needsReauthentication = false
     @Published private(set) var status = "Checking live HLS"
     @Published private(set) var advertisedHeights: [Int] = []
+    @Published private(set) var metrics = "Awaiting decoded video"
+    private(set) var lastHTTPStatus: Int?
+    private var openedAt = ProcessInfo.processInfo.systemUptime
+    private var firstFrame: Double?
+    private var transitions: [String] = []
     private(set) var lastVideoReceivedAt: Date?
     var muted = true {
         didSet { player.isMuted = muted }
@@ -38,6 +43,10 @@ final class HLSLiveStream: ObservableObject {
 
     func prepare(api: HorizonAPI, camera: String, configuration: LiveHLSConfiguration) async throws -> Bool {
         stop()
+        openedAt = ProcessInfo.processInfo.systemUptime
+        firstFrame = nil
+        transitions = []
+        lastHTTPStatus = nil
         let token = generation
         status = "Checking live HLS support"
         let policy = try LiveHLSResourcePolicy(address: api.address, camera: camera)
@@ -68,8 +77,9 @@ final class HLSLiveStream: ObservableObject {
             advertisedHeights = Array(Set(capability.renditions.map(\.height).filter { $0 >= 720 })).sorted()
             _ = try policy.masterURL(capability.playlist)
             status = "Opening authenticated live HLS"
+            let masterURL = try configuration.masterURL(status: capability, policy: policy)
             let client = AuthenticatedLiveHLSClient(policy: policy, cookies: api.cookies,
-                maximumHeight: configuration.maximumHeight)
+                maximumHeight: configuration.maximumHeight, masterURL: masterURL)
             self.client = client
             let master = try await client.prepareMaster()
             try Task.checkCancellation()
@@ -84,7 +94,8 @@ final class HLSLiveStream: ObservableObject {
             source.onFailure = { [weak self] failure in
                 guard let self, self.generation == token else { return }
                 self.fail(failure.localizedDescription,
-                    authenticationRequired: LiveHLSGate.requiresReauthentication(failure))
+                    authenticationRequired: LiveHLSGate.requiresReauthentication(failure),
+                    httpStatus: (failure as? HorizonError)?.httpStatusCode)
             }
             return true
         } catch {
@@ -123,7 +134,8 @@ final class HLSLiveStream: ObservableObject {
                                 guard let self, self.generation == token, self.player.currentItem === item else { return }
                                 if item.status == .readyToPlay { self.player.play() }
                                 else if item.status == .failed {
-                                    self.fail(item.error?.localizedDescription ?? "Live HLS playback failed.")
+                                    let code = item.error.map { ($0 as NSError).code } ?? 0
+                                    self.fail("AVPlayer HLS failed (code \(code)); errors \(item.errorLog()?.events.count ?? 0). If LL-HLS part durations changed, retain the server playlists for packager qualification.")
                                 }
                             }
                         },
@@ -201,7 +213,17 @@ final class HLSLiveStream: ObservableObject {
         guard generation == token, playerLayer.isReadyForDisplay,
               let size = player.currentItem?.presentationSize,
               size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return }
-        if resolution != size { resolution = size }
+        if firstFrame == nil { firstFrame = ProcessInfo.processInfo.systemUptime - openedAt }
+        if resolution != size {
+            resolution = size
+            transitions.append("\(Int(size.width))x\(Int(size.height))")
+            if transitions.count > 16 { transitions.removeFirst() }
+        }
+        let access = player.currentItem?.accessLog()?.events.last
+        metrics = "First decoded frame: \((firstFrame ?? 0).formatted(.number.precision(.fractionLength(2)))) s; " +
+            "resolutions: \(transitions.joined(separator: " > ")); " +
+            "observed bps: \(Int(access?.observedBitrate ?? 0)); indicated bps: \(Int(access?.indicatedBitrate ?? 0)); " +
+            "stalls: \(access?.numberOfStalls ?? 0)"
         startup?.cancel()
         startup = nil
     }
@@ -232,8 +254,9 @@ final class HLSLiveStream: ObservableObject {
         }
     }
 
-    private func fail(_ message: String, authenticationRequired: Bool = false) {
+    private func fail(_ message: String, authenticationRequired: Bool = false, httpStatus: Int? = nil) {
         stop()
+        lastHTTPStatus = httpStatus
         error = message
         needsReauthentication = authenticationRequired
         status = "Live HLS failed"
@@ -253,6 +276,7 @@ final class HLSLiveStream: ObservableObject {
         observations.removeAll()
         if let failureObserver { NotificationCenter.default.removeObserver(failureObserver) }
         failureObserver = nil
+        player.currentItem?.asset.cancelLoading()
         player.replaceCurrentItem(with: nil)
         source?.close()
         source = nil

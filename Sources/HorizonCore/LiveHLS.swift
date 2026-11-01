@@ -41,16 +41,16 @@ public struct LiveHLSStatus: Decodable, Sendable {
 
 public enum LiveHLSGate {
     public static func shouldProbe(cameraEnabled: Bool, optedIn: Bool, automatic: Bool, transport: String) -> Bool {
-        cameraEnabled && (transport == "hls" || (optedIn && automatic && transport == "https"))
+        cameraEnabled
     }
 
     public static func permitsCompatibilityFallback(_ configuration: LiveHLSConfiguration?) -> Bool {
-        configuration?.requiresHLS != true
+        false
     }
 
     public static func mayRetain(cameraEnabled: Bool, optedIn: Bool,
                                  configuration: LiveHLSConfiguration?) -> Bool {
-        cameraEnabled && configuration != nil && (optedIn || configuration?.requiresHLS == true)
+        cameraEnabled && configuration != nil
     }
 
     public static func isUnsupportedHTTP(_ status: Int) -> Bool { [404, 405, 410, 501].contains(status) }
@@ -80,9 +80,49 @@ public struct LiveHLSEdgeRecoveryPolicy: Sendable {
 public struct LiveHLSConfiguration: Equatable, Sendable {
     public let maximumHeight: Int?
     public let requiresHLS: Bool
-    public init(maximumHeight: Int? = nil, requiresHLS: Bool = false) {
+    public let exactHeight: Int?
+    public let grid: Bool
+    public let audio: Bool
+    public init(maximumHeight: Int? = nil, requiresHLS: Bool = true,
+                exactHeight: Int? = nil, grid: Bool = false, audio: Bool = true) {
         self.maximumHeight = maximumHeight
-        self.requiresHLS = requiresHLS
+        self.requiresHLS = true
+        self.exactHeight = exactHeight
+        self.grid = grid
+        self.audio = audio
+    }
+
+    public func masterURL(status: LiveHLSStatus, policy: LiveHLSResourcePolicy) throws -> URL {
+        let master = try policy.masterURL(status.playlist)
+        let heights = Set(status.renditions.map(\.height).filter { (144...2160).contains($0) })
+        guard !heights.isEmpty else { throw HorizonError.message("No advertised HLS video profiles are available.") }
+        var query: [URLQueryItem] = []
+        if !audio || grid { query.append(.init(name: "audio", value: "false")) }
+        if let exactHeight {
+            guard heights.contains(exactHeight), maximumHeight.map({ exactHeight <= $0 }) ?? true else {
+                throw HorizonError.message("The pinned HLS height is unavailable or exceeds Data Saver. Choose an advertised height or Auto.")
+            }
+            query.append(.init(name: "height", value: String(exactHeight)))
+        } else if grid {
+            return try cappedGridURL(master: master, heights: heights)
+        } else if let maximumHeight {
+            guard (144...2160).contains(maximumHeight), heights.contains(where: { $0 <= maximumHeight }) else {
+                throw HorizonError.message("No advertised HLS rung fits this display/Data Saver cap.")
+            }
+            query.append(.init(name: "max_height", value: String(maximumHeight)))
+        }
+        var parts = URLComponents(url: master, resolvingAgainstBaseURL: false)!
+        parts.queryItems = query.isEmpty ? nil : query
+        return try policy.validate(parts.url!)
+    }
+
+    private func cappedGridURL(master: URL, heights: Set<Int>) throws -> URL {
+        guard let height = heights.filter({ height in maximumHeight.map { height <= $0 } ?? true }).min() else {
+            throw HorizonError.message("No advertised HLS rung fits the tile's cap.")
+        }
+        var parts = URLComponents(url: master, resolvingAgainstBaseURL: false)!
+        parts.queryItems = [.init(name: "audio", value: "false"), .init(name: "height", value: String(height))]
+        return parts.url!
     }
 }
 
@@ -122,6 +162,7 @@ public struct LiveHLSResourcePolicy: Sendable {
     public let camera: String
     public let root: URL
     public let canonicalMaster: URL
+    public let isLive: Bool
     private static let assetScheme = "horizon-hls"
 
     public init(address: ServerAddress, camera: String) throws {
@@ -134,6 +175,31 @@ public struct LiveHLSResourcePolicy: Sendable {
         self.camera = camera
         root = address.endpoint(["api", camera, "live", "hls"])
         canonicalMaster = root.appendingPathComponent("master.m3u8")
+        isLive = true
+    }
+
+    public init(address: ServerAddress, mediaURL: URL) throws {
+        guard address.url.scheme == "https", address.hasSameOrigin(as: mediaURL),
+              mediaURL.pathExtension == "m3u8",
+              mediaURL.user == nil, mediaURL.password == nil, mediaURL.query == nil, mediaURL.fragment == nil else {
+            throw HorizonError.invalidMediaPath
+        }
+        let vod = address.endpoint(["vod"]).path + "/"
+        let api = address.endpoint(["api", "onvif", "cameras"]).path + "/"
+        guard mediaURL.path.hasPrefix(vod) || mediaURL.path.hasPrefix(api) else { throw HorizonError.invalidMediaPath }
+        if mediaURL.path.hasPrefix(api) {
+            let parts = mediaURL.path.dropFirst(api.count).split(separator: "/")
+            guard parts.count == 6, parts[1] == "replay", parts[2] == "sessions",
+                  parts[4] == "hls", parts[5] == "index.m3u8",
+                  NativeNotificationRoute.isValidIdentifier(String(parts[0])),
+                  NativeNotificationRoute.isValidIdentifier(String(parts[3])) else { throw HorizonError.invalidMediaPath }
+        }
+        self.address = address
+        camera = ""
+        root = mediaURL.deletingLastPathComponent()
+        canonicalMaster = mediaURL
+        isLive = false
+        _ = try validate(mediaURL)
     }
 
     public func masterURL(_ reference: String) throws -> URL {
@@ -157,7 +223,7 @@ public struct LiveHLSResourcePolicy: Sendable {
             throw HorizonError.invalidMediaPath
         }
         let safe = try validate(url)
-        if base.pathExtension.lowercased() == "m3u8", base.path != canonicalMaster.path,
+        if isLive, base.pathExtension.lowercased() == "m3u8", base.path != canonicalMaster.path,
            let base = try? validate(base),
            safe.deletingLastPathComponent().path != base.deletingLastPathComponent().path {
             throw HorizonError.invalidMediaPath
@@ -181,10 +247,10 @@ public struct LiveHLSResourcePolicy: Sendable {
         }
         components.percentEncodedPath = "/" + segments.joined(separator: "/")
         guard let normalized = components.url, normalized.path.hasPrefix(root.path + "/"),
-              ["m3u8", "mp4"].contains(normalized.pathExtension.lowercased())
+              (isLive ? ["m3u8", "mp4"] : ["m3u8", "mp4", "m4s", "ts", "aac"]).contains(normalized.pathExtension.lowercased())
         else { throw HorizonError.invalidMediaPath }
         let route = normalized.path.dropFirst(root.path.count + 1).split(separator: "/")
-        if route.count != 1 || route.first != "master.m3u8" {
+        if isLive && (route.count != 1 || route.first != "master.m3u8") {
             guard route.count == 2, Self.height(String(route[0])) != nil,
                   !route[1].isEmpty else { throw HorizonError.invalidMediaPath }
         }
@@ -203,6 +269,16 @@ public struct LiveHLSResourcePolicy: Sendable {
                 }
             case "_HLS_skip":
                 guard ["YES", "v2"].contains(value) else { throw HorizonError.invalidMediaPath }
+            case "warm_max_height", "height", "max_height":
+                guard isLive, let number = Int(value), (144...2160).contains(number),
+                      value.utf8.allSatisfy({ (48...57).contains($0) }) else { throw HorizonError.invalidMediaPath }
+                if item.name != "warm_max_height" {
+                    guard normalized.path == canonicalMaster.path else { throw HorizonError.invalidMediaPath }
+                } else if route.count == 2, let active = Self.height(String(route[0])), number < active {
+                    throw HorizonError.invalidMediaPath
+                }
+            case "audio":
+                guard isLive, normalized.path == canonicalMaster.path, value == "false" else { throw HorizonError.invalidMediaPath }
             default: throw HorizonError.invalidMediaPath
             }
         }
@@ -220,7 +296,7 @@ public struct LiveHLSResourcePolicy: Sendable {
         guard component.hasSuffix("p") else { return nil }
         let digits = component.dropLast()
         guard !digits.isEmpty, digits.utf8.allSatisfy({ (48...57).contains($0) }),
-              let height = Int(digits), height > 0 else { return nil }
+              let height = Int(digits), (144...2160).contains(height) else { return nil }
         return height
     }
 
@@ -363,7 +439,7 @@ public struct LiveHLSMaster: Sendable {
                     width = actualWidth
                     height = actualHeight
                 }
-                if height >= 720 && (maximumHeight.map({ height <= $0 }) ?? true) {
+                if height >= 144 && height <= 2160 && (maximumHeight.map({ height <= $0 }) ?? true) {
                     variants.append(Variant(url: child, bandwidth: bandwidth, width: width, height: height))
                     kept.append(line); kept.append(lines[index + 1])
                 }

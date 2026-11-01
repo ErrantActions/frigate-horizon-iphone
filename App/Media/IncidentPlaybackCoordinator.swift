@@ -293,6 +293,8 @@ private final class IncidentReplayChannel {
     private var api: HorizonAPI?
     private var seekToken = UUID()
     private var pendingPosition: Double?
+    private var source: AuthenticatedLiveHLSAsset?
+    private var opening: Task<Void, Never>?
 
     init(id: String, clock: CMClock) {
         self.id = id
@@ -333,7 +335,25 @@ private final class IncidentReplayChannel {
         player.pause()
         if player.currentItem == nil {
             guard let url, let api else { fail("The recording source is not available."); return }
-            let item = AVPlayerItem(asset: AVURLAsset(url: url, options: [AVURLAssetHTTPCookiesKey: api.cookies]))
+            let token = seekToken
+            opening?.cancel()
+            opening = Task { [weak self] in
+            guard let self else { return }
+            do {
+            let policy = try LiveHLSResourcePolicy(address: api.address, mediaURL: url)
+            let client = AuthenticatedLiveHLSClient(policy: policy, cookies: api.cookies)
+            let source = try await AuthenticatedLiveHLSAsset(client: client)
+            guard self.seekToken == token, !Task.isCancelled else { source.close(); return }
+            self.source = source
+            source.onFailure = { [weak self] error in
+                self?.fail(error.localizedDescription)
+                self?.discardItem()
+                self?.changed?()
+                if LiveHLSGate.requiresReauthentication(error) {
+                    NotificationCenter.default.post(name: .horizonMediaAuthenticationExpired, object: api)
+                }
+            }
+            let item = AVPlayerItem(asset: source.asset)
             observation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
                 Task { @MainActor in
                     guard let self, self.player.currentItem === item else { return }
@@ -356,6 +376,12 @@ private final class IncidentReplayChannel {
                 }
             }
             player.replaceCurrentItem(with: item)
+            } catch {
+                if self.seekToken == token, !Task.isCancelled {
+                    self.fail(error.localizedDescription); self.changed?()
+                }
+            }
+            }
         } else if player.currentItem?.status == .readyToPlay { performSeek() }
         changed?()
     }
@@ -408,6 +434,11 @@ private final class IncidentReplayChannel {
     }
 
     private func discardItem() {
+        opening?.cancel()
+        opening = nil
+        player.currentItem?.asset.cancelLoading()
+        source?.close()
+        source = nil
         seekToken = UUID()
         player.pause()
         player.currentItem?.cancelPendingSeeks()

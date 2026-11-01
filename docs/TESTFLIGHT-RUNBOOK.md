@@ -1231,6 +1231,73 @@ server contract requires an owner-provided sanitized status/playlist sample,
 not weaker validation. Real-iPhone first frame, audio, throttled ABR and PiP
 acceptance remain separate.
 
+### HLS-only viewing integration (current behavior)
+
+This supersedes the earlier optional/explicit HLS transport sections. All live
+viewing now uses AVPlayer HLS regardless of saved WebRTC/compatibility choices
+or legacy `ui.live_hls` flags. No MSE/WebRTC/JSMpeg viewing player or transport
+fallback remains. The legacy WebRTC library is retained only for dormant
+talkback cleanup code; talkback controls are hidden in this release. Authorized
+PTZ and notification permissions remain unchanged.
+
+The configured server root builds an API base ending `/api/`; the status
+playlist resolves against that base. Live master selection uses only advertised
+heights: tiles pin the lowest available rung and request `audio=false`; full
+camera Auto uses `max_height` when capped, and exact quality uses `height`.
+4K is offered only when 2160p is advertised. Low Data Mode caps at 720p;
+ordinary cellular use is not itself Data Saver. Native AVPlayer throughput/
+buffering controls ABR after the startup bandwidth cap releases.
+
+`warm_max_height` and LL-HLS query strings survive URI rewriting unchanged.
+Live routes remain camera-scoped with strict private-query rejection, bounded
+reload values and full HTTP-200 MP4 loading. No filenames or media timestamps
+are constructed, persisted or rebased. VOD and camera-SD use separate scoped
+policies, not live-prefix substitution. Viewing uses `/vod/` recording/event/
+export/preview HLS; downloads continue using original files. Camera-SD
+capability/search/session operations were verified against existing local
+server source, not a production RPC; session IDs form the documented HLS route,
+and leaving issues the existing DELETE with closure-result validation.
+
+The existing in-process AVPlayer adapter remains bound to loopback only with an
+ephemeral per-asset cookie passed through public `AVURLAssetHTTPCookiesKey`.
+It is not a LAN/external relay or an exposed proxy. Every remote playlist,
+audio/init/segment/part request uses a private ephemeral cookie-authenticated
+URLSession with normal HTTPS/origin/path validation and no shared media cache.
+It translates local Range/HEAD demands from complete authenticated origin GETs,
+without requiring live 206/HEAD support. VOD types/routes are validated
+independently. No undocumented AVFoundation header key, credential-bearing URL,
+TLS exception, SNI override or direct camera/packager address is used.
+
+401 presents the shared sign-in flow without refresh storms; 403 stops with
+camera-denial guidance. A rotated 404 rebuilds from status/master once, never an
+unbounded persisted-child retry. Generic VOD also has one fresh-master retry.
+Inactive assets cancel loading and close adapters, including backgrounded
+recording players unless intentionally owning PiP. Server producer shutdown
+may lag the final request by up to 60 seconds. Player metric sharing includes
+first decoded-frame latency, observed/indicated bitrate, stall count and decoded
+resolution transitions, not URLs/cookies/account identifiers.
+
+Notification support/auth refresh first reads the existing installation's
+`camera_ids`. Registration renewal uses the confirmed value, preserving
+`null` (all allowed), `[]` (explicit opt-out) and specific selections. Missing
+or malformed metadata blocks renewal rather than defaulting to all or empty.
+The screen shows actual server choices; edits require the user's explicit
+save. Token renewal re-reads current choices unless an explicit save is pending.
+Permission changes do not truncate the draft into an empty registration.
+Confidence policy, quiet-hours/health preferences and private-photo opt-in are
+not reset. No current device registration was read or written during this
+source task, and no notification test was sent.
+
+Real-iPhone acceptance remains required: cold start/audio sync, actual decoded
+720/1080/4K, Auto under throttling, idle/resume, PiP, grid resource shutdown,
+local/remote recordings and camera-SD closure. In particular, changing native-4K
+`PART-TARGET` values are preserved verbatim in fixtures, but native AVPlayer
+tolerance has not been measured on a physical iPhone here. If it rejects the
+packager's part-duration changes, collect the affected playlists plus
+AVPlayer error/access logs and treat it as a packager blocker, not auth failure
+or justification for another transport. No production NVR/settings/cameras,
+provider flags or other agent was touched.
+
 ### Automatic internal tester distribution
 
 Use **Owner Testing Auto**, the internal automatic-distribution group created

@@ -140,7 +140,8 @@ final class HorizonAPI {
         ]))
         let (bytes, response) = try await streaming.bytes(for: request)
         guard let response = response as? HTTPURLResponse else { throw HorizonError.unexpectedResponse }
-        if response.statusCode == 401 || response.statusCode == 403 { throw HorizonError.unauthorized }
+        if response.statusCode == 403 { throw HorizonError.forbidden }
+        if response.statusCode == 401 { throw HorizonError.unauthorized }
         guard (200..<300).contains(response.statusCode) else { throw HorizonError.http(response.statusCode) }
         guard response.mimeType == "text/plain" else { throw HorizonError.unexpectedResponse }
         for try await line in bytes.lines {
@@ -193,8 +194,8 @@ final class HorizonAPI {
                                       distinguishCameraDenial: Bool = false) async throws -> (data: Data, response: HTTPURLResponse) {
         let (bytes, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw HorizonError.unexpectedResponse }
-        if response.statusCode == 403, distinguishCameraDenial { throw HorizonError.forbidden }
-        if response.statusCode == 401 || response.statusCode == 403 { throw HorizonError.unauthorized }
+        if response.statusCode == 403 { throw HorizonError.forbidden }
+        if response.statusCode == 401 { throw HorizonError.unauthorized }
         guard (200..<300).contains(response.statusCode) else {
             struct ServerFailure: Decodable { let message: String?; let detail: String? }
             if response.mimeType == "application/json" {

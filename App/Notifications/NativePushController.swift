@@ -20,6 +20,7 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
     @Published var error: String?
     @Published var route: NativeNotificationRoute?
     @Published private(set) var status = "Native push has not been configured."
+    @Published private(set) var actualSelection = NativePushSelection()
     private var api: HorizonAPI?
     private var accountFingerprint: String?
     private var deviceToken: String?
@@ -33,6 +34,7 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
     private var registrationRequest = UUID()
     private var queuedRoute: NativeNotificationRoute?
     private var navigationBlocks: Set<UUID> = []
+    private var explicitCameraSave = false
 
     var supportedBuild: Bool {
         Bundle.main.object(forInfoDictionaryKey: "HorizonNativePushEnabled") as? String == "YES"
@@ -64,6 +66,8 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
         capabilities = nil
         registered = false
         registeredFeatures = []
+        actualSelection = NativePushSelection()
+        explicitCameraSave = false
         devicePreferences = nil
         preferencesBusy = false
         imageSessionReady = false
@@ -86,6 +90,7 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
             guard !Task.isCancelled, generation == token else { return }
             capabilities = result
             configureNotificationCategories()
+            try await loadInstallationSelection(api: api, token: token)
             guard result.enabled else { status = "The server's APNs provider is disabled."; return }
             status = "Native push is available. Enable it to request permission."
             publishQueuedRoute()
@@ -117,6 +122,7 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
             }
             capabilities = result
             configureNotificationCategories()
+            try await loadInstallationSelection(api: api, token: token)
             self.error = nil
             guard result.enabled else {
                 status = "The server's APNs provider is disabled."
@@ -157,8 +163,25 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
     }
 
     var savedCameraIDs: [String]? {
+        if actualSelection.known { return actualSelection.cameraIDs }
         if UserDefaults.standard.bool(forKey: "nativePushSelectedCameras") {
             return UserDefaults.standard.stringArray(forKey: "nativePushCameraIDs") ?? []
+        }
+
+        private func loadInstallationSelection(api: HorizonAPI, token: UUID) async throws {
+            let devices: [NativePushDeviceMetadata] = try await api.get(["notifications", "apns", "devices"])
+            guard generation == token, self.api === api else { throw CancellationError() }
+            let id = try UUID(uuidString: installationID())
+            let matches = devices.filter { $0.installationID == id }
+            guard matches.count <= 1 else { throw HorizonError.message("Duplicate installation metadata. Notification renewal was stopped.") }
+            actualSelection = NativePushSelection()
+            if let device = matches.first {
+                actualSelection.confirm(device.cameraIDs)
+                registered = true
+                // This is a read of server state, not an opt-in or a registration write.
+                UserDefaults.standard.set(device.cameraIDs != nil, forKey: "nativePushSelectedCameras")
+                UserDefaults.standard.set(device.cameraIDs ?? [], forKey: "nativePushCameraIDs")
+            }
         }
         return nil
     }
@@ -208,8 +231,15 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
             guard granted else {
                 throw HorizonError.message("Notifications were not allowed. Enable them in iOS Settings.")
             }
-            UserDefaults.standard.set(cameraIDs != nil, forKey: "nativePushSelectedCameras")
-            UserDefaults.standard.set(cameraIDs ?? [], forKey: "nativePushCameraIDs")
+            if requestPermission {
+                actualSelection.confirm(cameraIDs)
+                explicitCameraSave = true
+            } else {
+                _ = try actualSelection.renewalCameras()
+            }
+            let confirmed = try actualSelection.renewalCameras()
+            UserDefaults.standard.set(confirmed != nil, forKey: "nativePushSelectedCameras")
+            UserDefaults.standard.set(confirmed ?? [], forKey: "nativePushCameraIDs")
             setWanted(true)
             status = "Registering this device with Apple..."
             let token = generation
@@ -255,6 +285,10 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
             guard generation == session, wantsPush, let api, let capabilities,
                   let fingerprint = accountFingerprint else { return }
             do {
+                if !explicitCameraSave {
+                    try await loadInstallationSelection(api: api, token: session)
+                }
+                guard generation == session, registrationRequest == requestID else { return }
                 let environment: String
                 switch Bundle.main.object(forInfoDictionaryKey: "HorizonAPNsEnvironment") as? String {
                 case "development": environment = "sandbox"
@@ -262,8 +296,10 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
                 default: throw HorizonError.message("The app's APNs environment build setting is invalid.")
                 }
                 let features = capabilities.supportsDeviceFeatures == true ? ["actions-v1", "health-v1"] : nil
+                guard registrationRequest == requestID else { return }
+                let cameras = try actualSelection.renewalCameras()
                 let body = try NativePushRegistrationBody(installationID: installationID(),
-                    token: token, environment: environment, cameraIDs: savedCameraIDs, features: features)
+                    token: token, environment: environment, cameraIDs: cameras, features: features)
                 UserDefaults.standard.set(fingerprint, forKey: "nativePushAccount")
                 UserDefaults.standard.set(capabilities.serverID, forKey: "nativePushServerID")
                 let result: NativePushRegistrationResult = try await api.send(
@@ -273,6 +309,7 @@ final class NativePushController: NSObject, ObservableObject, UNUserNotification
                     throw HorizonError.message("The server did not confirm this notification registration.")
                 }
                 guard generation == session, registrationRequest == requestID, wantsPush else { return }
+                explicitCameraSave = false
                 registered = true
                 registeredFeatures = Set(body.features ?? [])
                 status = result.message

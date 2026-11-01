@@ -401,8 +401,7 @@ private struct ExportPlayerView: View {
             .navigationTitle(item.name)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .task {
-                do { playback.open(url: try api.address.mediaFile(item.videoPath, root: "exports"), api: api) }
-                catch { self.error = error.localizedDescription }
+                playback.open(url: api.address.endpoint(["vod", "export", item.id, "index.m3u8"]), api: api)
             }
             .onDisappear { playback.stop() }
         }

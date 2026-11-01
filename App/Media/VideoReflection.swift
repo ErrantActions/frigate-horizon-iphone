@@ -1,7 +1,6 @@
 import AVFoundation
 import SwiftUI
 import HorizonCore
-@preconcurrency import WebRTC
 
 @MainActor
 final class VideoReflection: ObservableObject {
@@ -18,21 +17,15 @@ final class VideoReflection: ObservableObject {
     private var item: AVPlayerItem?
     private var output: AVPlayerItemVideoOutput?
     private var transform: CGAffineTransform?
-    private var trackObserver: ReflectionTrackObserver?
     private var lastPlayerFrame: Double?
     private var gate = ReflectionSamplingGate()
 
     private enum Source {
         case player(AVPlayer)
-        case https(HTTPSLiveStream)
-        case webRTC(RTCVideoTrack)
 
         func matches(_ other: Source) -> Bool {
             switch (self, other) {
             case (.player(let lhs), .player(let rhs)): return lhs === rhs
-            case (.https(let lhs), .https(let rhs)): return lhs === rhs
-            case (.webRTC(let lhs), .webRTC(let rhs)): return lhs === rhs
-            default: return false
             }
         }
     }
@@ -44,11 +37,6 @@ final class VideoReflection: ObservableObject {
     }
 
     func follow(player: AVPlayer) { setSource(.player(player)) }
-    func follow(https: HTTPSLiveStream) { setSource(.https(https)) }
-    func follow(track: RTCVideoTrack?) {
-        if let track { setSource(.webRTC(track)) }
-        else { clearSource() }
-    }
 
     func setEnabled(_ value: Bool) {
         guard enabled != value else { return }
@@ -80,12 +68,6 @@ final class VideoReflection: ObservableObject {
                     self.attachItem(player.currentItem)
                 }
             }
-        case .webRTC(let track):
-            let observer = ReflectionTrackObserver()
-            trackObserver = observer
-            track.add(observer)
-        case .https:
-            break
         }
         sampling = Task { [weak self] in
             while !Task.isCancelled {
@@ -102,10 +84,6 @@ final class VideoReflection: ObservableObject {
         sampling = nil
         playerObservation = nil
         detachItem()
-        if case .webRTC(let track) = source, let trackObserver {
-            track.remove(trackObserver)
-        }
-        trackObserver = nil
         clearFrame()
     }
 
@@ -190,13 +168,6 @@ final class VideoReflection: ObservableObject {
 
     private func capture() -> Sample {
         switch source {
-        case .https(let stream):
-            guard let buffer = stream.reflectionPixelBuffer() else { return .clear }
-            return .frame(ReflectionFrame(content: .pixelBuffer(buffer, .identity)))
-        case .webRTC:
-            guard let snapshot = trackObserver?.takeFrame(), snapshot.fresh else { return .clear }
-            if let frame = snapshot.frame { return .frame(frame) }
-            return .unchanged
         case .player(let player):
             // Check identity synchronously as well as via KVO, so no old-camera image can escape.
             if item !== player.currentItem { attachItem(player.currentItem) }

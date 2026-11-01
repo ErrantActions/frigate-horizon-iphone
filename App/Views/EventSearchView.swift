@@ -272,6 +272,15 @@ struct EventDetailView: View {
                     .horizonHeroRow()
                 }
                 mediaSection
+                if let end = current.endTime, end > current.startTime {
+                    Section {
+                        NavigationLink {
+                            RecordingPlaybackView(api: api, camera: current.camera, start: current.startTime, end: end,
+                                mediaURL: api.address.endpoint(["vod", "preview", current.camera, "start",
+                                    String(current.startTime), "end", String(end), "index.m3u8"]))
+                        } label: { Label("Play HLS preview", systemImage: "play.rectangle") }
+                    }
+                }
                 informationSection
                 downloadSection
                 if model.isAdmin { administratorSection }
@@ -317,7 +326,8 @@ struct EventDetailView: View {
     private var mediaSection: some View {
         Section {
             if current.hasClip, let end = current.endTime, end > current.startTime {
-                RecordingPlaybackView(api: api, camera: current.camera, start: current.startTime, end: end)
+                RecordingPlaybackView(api: api, camera: current.camera, start: current.startTime, end: end,
+                    mediaURL: api.address.endpoint(["vod", "event", current.id, "index.m3u8"]))
                     .frame(height: 280)
             } else {
                 ServerImage(api: api, url: api.address.endpoint([

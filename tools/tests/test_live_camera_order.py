@@ -32,7 +32,7 @@ class TestLiveCameraOrder(unittest.TestCase):
         self.assertNotIn("settings.ui?.dashboard", groups)
         self.assertIn("cameras.filter(\\.isLiveDashboardCamera)", groups)
         tour = (ROOT / "Sources/HorizonCore/CameraTour.swift").read_text(encoding="utf-8")
-        self.assertIn("isLiveDashboardCamera && preferredStream", tour)
+        self.assertIn("isLiveDashboardCamera", tour)
 
     def test_disabled_camera_history_and_saved_account_namespace_remain_available(self):
         recordings = (ROOT / "App/Views/RecordingsView.swift").read_text(encoding="utf-8")

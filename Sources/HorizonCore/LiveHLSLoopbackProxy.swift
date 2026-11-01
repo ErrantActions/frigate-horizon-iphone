@@ -146,7 +146,7 @@ private final class LiveHLSLoopbackProxy {
                         }
                         self.route = LiveHLSLocalRoute(policy: self.client.policy, port: port.rawValue,
                             credential: self.credential, cookieName: self.cookieName)
-                        do { self.finishOpening(.success(try self.route!.localURL(self.client.policy.canonicalMaster))) }
+                        do { self.finishOpening(.success(try self.route!.localURL(self.client.masterURL))) }
                         catch { self.finishOpening(.failure(error)) }
                     case .failed(let error):
                         self.finishOpening(.failure(error))
@@ -285,6 +285,8 @@ private final class LiveHLSLoopbackProxy {
         let mime: String
         switch path.lowercased() {
         case "m3u8": mime = "application/vnd.apple.mpegurl"
+        case "ts": mime = "video/mp2t"
+        case "aac": mime = "audio/aac"
         default: mime = "video/mp4"
         }
         var lines = ["HTTP/1.1 \(status) \(status == 206 ? "Partial Content" : "OK")",

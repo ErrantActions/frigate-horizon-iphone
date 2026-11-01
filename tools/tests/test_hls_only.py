@@ -12,22 +12,17 @@ def source(*parts):
 class TestHLSOnly(unittest.TestCase):
     def test_explicit_mode_reaches_avplayer_without_legacy_stream_aliases(self):
         live = source("App", "Views", "LiveView.swift")
-        self.assertIn('Text("HLS-only (AVPlayer over HTTPS)").tag("hls")', live)
-        self.assertIn('if transport == "hls" { return nil }', live)
-        self.assertIn('requiresHLS: transport == "hls"', live)
-        self.assertIn("set: selectTransport", live)
-        self.assertIn("currentCamera.hlsMaximumHeight(", live)
+        self.assertNotIn('@AppStorage("liveTransport")', live)
+        self.assertIn('private let transport = "hls"', live)
+        self.assertIn("exactHeight: exactHLSHeight", live)
         session = source("App", "Media", "LivePlaybackSession.swift")
-        self.assertIn('transport == "https" || transport == "hls"', session)
+        self.assertIn("self.hlsLive.prepare", session)
 
     def test_required_hls_cannot_fall_through_to_websocket_or_webrtc(self):
         session = source("App", "Media", "LivePlaybackSession.swift")
-        self.assertLess(
-            session.index("guard LiveHLSGate.permitsCompatibilityFallback(configuration)"),
-            session.index("self.hlsUnsupported = true"),
-        )
-        self.assertLess(session.index('guard transport != "hls"'), session.index("await httpsLive.run("))
-        self.assertIn("No compatibility stream was opened.", session)
+        self.assertNotIn("httpsLive", session)
+        self.assertNotIn("await live.run", session)
+        self.assertIn("for attempt in 0...1", session)
         self.assertIn("authenticationRequired: LiveHLSGate.requiresReauthentication(error)", session)
 
     def test_pip_scope_and_return_honor_explicit_hls_configuration(self):
@@ -43,6 +38,6 @@ class TestHLSOnly(unittest.TestCase):
         self.assertIn("AVPlayerItem(asset: source.asset)", player)
         self.assertIn("Double(master.lowestBandwidth)", player)
         live = source("App", "Views", "LiveView.swift")
-        self.assertIn("onHLSHeightsChanged: { hlsHeights = $0 }", live)
-        self.assertIn('transport == "hls" ? hlsHeights', live)
+        self.assertIn("onHLSHeightsChanged:", live)
+        self.assertIn("let heights = hlsHeights", live)
         self.assertNotIn("NSAllowsArbitraryLoads", source("App", "Info.plist"))

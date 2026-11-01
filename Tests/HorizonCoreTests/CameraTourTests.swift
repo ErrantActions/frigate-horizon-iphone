@@ -2,7 +2,7 @@ import XCTest
 @testable import HorizonCore
 
 final class CameraTourTests: XCTestCase {
-    func testTourCandidatesExcludeDisabledHiddenAndUnconfiguredStreams() throws {
+    func testHLSTourCandidatesExcludeDisabledHiddenWithoutRequiringLegacyStreamAliases() throws {
         let configuration = try JSONDecoder().decode(HorizonConfiguration.self, from: Data("""
         {"cameras":{
           "front":{"enabled":true,"live":{"streams":{"Main":"front_main"}}},
@@ -11,7 +11,7 @@ final class CameraTourTests: XCTestCase {
           "missing":{"enabled":true,"live":{"streams":{}}}
         }}
         """.utf8))
-        XCTAssertEqual(configuration.orderedCameras.filter(\.isTourCandidate).map(\.id), ["front"])
+        XCTAssertEqual(configuration.orderedCameras.filter(\.isTourCandidate).map(\.id), ["front", "missing"])
     }
 
     func testTourUsesTheProvidedCameraOrderAndWrapsBothDirections() {

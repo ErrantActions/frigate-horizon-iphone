@@ -14,8 +14,12 @@ final class RecordingPlayer: ObservableObject {
     private var timeObserver: Any?
     private var initialPosition = 0.0
     private var seekGeneration = UUID()
+    private var opening: Task<Void, Never>?
+    private var source: AuthenticatedLiveHLSAsset?
+    private var loadGeneration = UUID()
+    private var backgroundObserver: NSObjectProtocol?
 
-    func open(url: URL, api: HorizonAPI, initialPosition: Double = 0, autoplay: Bool = true) {
+    func open(url: URL, api: HorizonAPI, initialPosition: Double = 0, autoplay: Bool = true, recoveries: Int = 0) {
         stop()
         loading = true
         error = nil
@@ -23,8 +27,34 @@ final class RecordingPlayer: ObservableObject {
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
             try AVAudioSession.sharedInstance().setActive(true)
-            let asset = AVURLAsset(url: url, options: [AVURLAssetHTTPCookiesKey: api.cookies])
-            let item = AVPlayerItem(asset: asset)
+            let policy = try LiveHLSResourcePolicy(address: api.address, mediaURL: url)
+            let token = loadGeneration
+            opening = Task { [weak self] in
+            guard let self else { return }
+            do {
+            let client = AuthenticatedLiveHLSClient(policy: policy, cookies: api.cookies)
+            let source = try await AuthenticatedLiveHLSAsset(client: client)
+            guard self.loadGeneration == token, !Task.isCancelled else { source.close(); return }
+            self.source = source
+            source.onFailure = { [weak self] error in
+                guard let self, self.loadGeneration == token else { return }
+                if (error as? HorizonError)?.httpStatusCode == 404, recoveries == 0 {
+                    let position = self.position
+                    self.open(url: url, api: api, initialPosition: position, autoplay: autoplay, recoveries: 1)
+                    return
+                }
+                self.error = error.localizedDescription
+                self.loading = false
+                self.player.pause()
+                self.player.replaceCurrentItem(with: nil)
+                self.source?.close()
+                self.source = nil
+                if LiveHLSGate.requiresReauthentication(error) {
+                    // The shared AppModel coalesces this into the existing sign-in flow.
+                    NotificationCenter.default.post(name: .horizonMediaAuthenticationExpired, object: api)
+                }
+            }
+            let item = AVPlayerItem(asset: source.asset)
             observation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
                 Task { @MainActor in
                     guard let self, self.player.currentItem === item else { return }
@@ -51,12 +81,25 @@ final class RecordingPlayer: ObservableObject {
                 }
             }
             player.replaceCurrentItem(with: item)
+            backgroundObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+                    Task { @MainActor in
+                        guard let self, !HLSBackgroundOwnership.players.contains(ObjectIdentifier(self.player)) else { return }
+                        self.stop()
+                    }
+                }
             timeObserver = player.addPeriodicTimeObserver(
                 forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main
             ) { [weak self] time in
                 Task { @MainActor in
                     guard let self, self.player.currentItem === item, time.seconds.isFinite else { return }
                     self.position = time.seconds
+                }
+                } catch {
+                    guard self.loadGeneration == token, !Task.isCancelled else { return }
+                    self.error = error.localizedDescription
+                    self.loading = false
+                }
                 }
             }
         } catch {
@@ -66,6 +109,12 @@ final class RecordingPlayer: ObservableObject {
     }
 
     func stop() {
+        loadGeneration = UUID()
+        opening?.cancel()
+        opening = nil
+        player.currentItem?.asset.cancelLoading()
+        source?.close()
+        source = nil
         seekGeneration = UUID()
         isSeeking = false
         loading = false
@@ -74,10 +123,17 @@ final class RecordingPlayer: ObservableObject {
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
         observation = nil
+        if let backgroundObserver { NotificationCenter.default.removeObserver(backgroundObserver) }
+        backgroundObserver = nil
         if let failureObserver { NotificationCenter.default.removeObserver(failureObserver) }
         failureObserver = nil
         player.replaceCurrentItem(with: nil)
         position = 0
+    }
+
+    extension Notification.Name {
+        static let horizonMediaAuthenticationExpired = Notification.Name("Horizon.mediaAuthenticationExpired")
+        static let horizonMediaCleanupFailure = Notification.Name("Horizon.mediaCleanupFailure")
     }
 
     func seek(to position: Double, autoplay: Bool? = nil) {
@@ -112,20 +168,40 @@ struct NativeRecordingSurface: UIViewControllerRepresentable {
         controller.player = player
         controller.allowsPictureInPicturePlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = true
+        controller.delegate = context.coordinator
+        context.coordinator.player = player
         return controller
     }
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         controller.player = player
     }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+        weak var player: AVPlayer?
+        func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
+            if let player { HLSBackgroundOwnership.players.insert(ObjectIdentifier(player)) }
+        }
+        func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
+            if let player { HLSBackgroundOwnership.players.remove(ObjectIdentifier(player)) }
+        }
+        func playerViewController(_ playerViewController: AVPlayerViewController,
+                                  failedToStartPictureInPictureWithError error: Error) {
+            if let player { HLSBackgroundOwnership.players.remove(ObjectIdentifier(player)) }
+        }
+    }
 }
 
+@MainActor
+enum HLSBackgroundOwnership { static var players: Set<ObjectIdentifier> = [] }
 struct RecordingPlaybackView: View {
     let api: HorizonAPI
     let camera: String
     let start: Double
     let end: Double
     var initialTimestamp: Double? = nil
+    var mediaURL: URL? = nil
     @StateObject private var playback = RecordingPlayer()
     @State private var retry = 0
     @State private var expanded = false
@@ -156,7 +232,7 @@ struct RecordingPlaybackView: View {
         .task(id: "\(camera)-\(start)-\(end)-\(retry)") {
             addressError = nil
             do {
-                let url = try api.address.playback(camera: camera, start: start, end: end)
+                let url = try mediaURL ?? api.address.playback(camera: camera, start: start, end: end)
                 let position = initialTimestamp.flatMap { value in
                     value.isFinite && value >= start && value < end ? value - start : nil
                 } ?? 0

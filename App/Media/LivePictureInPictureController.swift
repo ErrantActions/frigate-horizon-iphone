@@ -121,34 +121,11 @@ final class LivePictureInPictureController: NSObject, ObservableObject {
             return
         }
         let controller: AVPictureInPictureController
-        if value.usesLiveHLS {
             guard let hlsController = AVPictureInPictureController(playerLayer: value.hlsLive.playerLayer) else {
                 fail("Live HLS Picture in Picture could not be created on this device.")
                 return
             }
             controller = hlsController
-        } else {
-            let layer: AVSampleBufferDisplayLayer
-            if selection.transport == "webrtc" {
-            layer = value.webRTCPiPRenderer.displayLayer
-            value.webRTCPiPRenderer.onFailure = { [weak self, weak value] message in
-                guard let self, let value, self.owns(value) else { return }
-                self.fail("Live Picture in Picture failed: \(message)")
-            }
-            trackObservation = value.live.$videoTrack.sink { [weak self, weak value] track in
-                Task { @MainActor in
-                    guard let self, let value, self.owns(value), let track else { return }
-                    value.webRTCPiPRenderer.follow(track)
-                }
-            }
-            } else {
-                layer = value.httpsLive.videoLayer
-            }
-            let source = AVPictureInPictureController.ContentSource(
-                sampleBufferDisplayLayer: layer, playbackDelegate: self
-            )
-            controller = AVPictureInPictureController(contentSource: source)
-        }
         controller.delegate = self
         controller.requiresLinearPlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = false
@@ -196,9 +173,7 @@ final class LivePictureInPictureController: NSObject, ObservableObject {
                         self.stop()
                         return
                     }
-                    let lastFrame = session.usesLiveHLS ? session.hlsLive.lastVideoReceivedAt :
-                        (session.selection?.transport == "webrtc"
-                            ? session.webRTCPiPRenderer.lastDisplayedFrame : session.httpsLive.lastVideoReceivedAt)
+                    let lastFrame = session.hlsLive.lastVideoReceivedAt
                     guard session.isRunning, let lastFrame, Date().timeIntervalSince(lastFrame) < 10 else {
                         session.sourceFailed("No live video is arriving. Check camera availability and reconnect.")
                         return
@@ -236,8 +211,6 @@ final class LivePictureInPictureController: NSObject, ObservableObject {
         restoration = nil
         possibleObservation = nil
         trackObservation = nil
-        previous?.webRTCPiPRenderer.onFailure = nil
-        previous?.webRTCPiPRenderer.stop()
         previousController?.delegate = nil
         previousController?.stopPictureInPicture()
         previousController?.contentSource = nil

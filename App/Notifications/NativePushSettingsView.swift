@@ -10,6 +10,7 @@ struct NativePushSettingsView: View {
     @State private var selectedCameras: Set<String> = []
     @State private var confirmImages = false
     @State private var confirmTest = false
+    @State private var camerasEdited = false
 
     var body: some View {
         Form {
@@ -55,20 +56,33 @@ struct NativePushSettingsView: View {
             .listRowBackground(HorizonPalette.surface)
             Section {
                 Toggle("All cameras allowed by my account", isOn: $allCameras)
+                    .onChange(of: allCameras) { _, _ in camerasEdited = true }
                 if !allCameras {
                     ForEach(model.cameras) { camera in
                         Toggle(camera.name, isOn: Binding(
                             get: { selectedCameras.contains(camera.id) },
-                            set: { if $0 { selectedCameras.insert(camera.id) } else { selectedCameras.remove(camera.id) } }
+                            set: {
+                                camerasEdited = true
+                                if $0 { selectedCameras.insert(camera.id) } else { selectedCameras.remove(camera.id) }
+                            }
                         ))
                     }
+                    Text(push.actualSelection.known
+                        ? (push.actualSelection.cameraIDs == nil ? "Server selection: all permitted cameras." :
+                            (push.actualSelection.cameraIDs!.isEmpty ? "Server selection: no cameras (explicit opt-out)." :
+                                "Server selection: " + push.actualSelection.cameraIDs!.joined(separator: ", ")))
+                        : "This installation's server camera selection has not been confirmed. Select cameras explicitly before enabling.")
+                        .font(.caption).foregroundStyle(.secondary)
                     if selectedCameras.isEmpty {
                         Text("No cameras selected: this installation will not receive camera alerts.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Button(push.registered ? "Save camera choices / renew registration" : "Enable on this iPhone") {
-                    Task { await push.enable(cameraIDs: allCameras ? nil : selectedCameras.sorted()) }
+                    Task {
+                        await push.enable(cameraIDs: allCameras ? nil : selectedCameras.sorted())
+                        camerasEdited = false
+                    }
                 }
                 .buttonStyle(HorizonButtonStyle(.primary))
                 .disabled(push.busy || push.checkingSupport || !push.supportedBuild || push.capabilities?.enabled != true)
@@ -148,13 +162,19 @@ struct NativePushSettingsView: View {
         }
         .refreshable { await push.refreshServerSupport() }
         .onChange(of: model.cameras.map(\.id)) { _, ids in
-            selectedCameras.formIntersection(Set(ids))
+            // Permission changes must not turn a saved selection into [] during a refresh.
         }
         .onAppear {
             if let cameras = push.savedCameraIDs {
                 allCameras = false
                 selectedCameras = Set(cameras).intersection(Set(model.cameras.map(\.id)))
             }
+        }
+        .onChange(of: push.actualSelection) { _, selection in
+            guard !camerasEdited, selection.known else { return }
+            allCameras = selection.cameraIDs == nil
+            selectedCameras = Set(selection.cameraIDs ?? [])
+            camerasEdited = false
         }
     }
 

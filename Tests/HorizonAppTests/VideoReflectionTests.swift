@@ -1,7 +1,6 @@
 import XCTest
 import AVFoundation
 import CoreImage
-@preconcurrency import WebRTC
 @testable import FrigateHorizon
 
 final class VideoReflectionTests: XCTestCase {
@@ -51,62 +50,6 @@ final class VideoReflectionTests: XCTestCase {
         XCTAssertNotEqual(sharp, blurred)
         XCTAssertGreaterThan(blurred[0], 10)
         XCTAssertGreaterThan(blurred[2], 10)
-    }
-
-    func testWebRTCObserverUsesTheDecodedBufferAndClearsNilFrames() async throws {
-        let buffer = RTCCVPixelBuffer(pixelBuffer: try pixels())
-        let frame = RTCVideoFrame(buffer: buffer, rotation: try XCTUnwrap(RTCVideoRotation(rawValue: 90)),
-                                  timeStampNs: 123)
-        let observer = ReflectionTrackObserver()
-        observer.renderFrame(frame)
-        let snapshot = observer.takeFrame()
-        XCTAssertTrue(snapshot.fresh)
-        let result = await VideoReflectionRenderer().render(try XCTUnwrap(snapshot.frame), blurRadius: 0)
-        XCTAssertEqual(try XCTUnwrap(result).width, 32)
-        XCTAssertEqual(try XCTUnwrap(result).height, 64)
-        XCTAssertNil(observer.takeFrame().frame)
-        observer.renderFrame(nil)
-        XCTAssertFalse(observer.takeFrame().fresh)
-    }
-
-    func testWebRTCCroppingUsesOnlyTheVisibleDecodedRegion() async throws {
-        let buffer = RTCCVPixelBuffer(pixelBuffer: try pixels(), adaptedWidth: 32, adaptedHeight: 16,
-                                      cropWidth: 32, cropHeight: 16, cropX: 0, cropY: 0)
-        let frame = RTCVideoFrame(buffer: buffer, rotation: try XCTUnwrap(RTCVideoRotation(rawValue: 0)),
-                                  timeStampNs: 123)
-        let rendered = await VideoReflectionRenderer().render(ReflectionFrame(content: .webRTC(frame)), blurRadius: 0)
-        let result = try XCTUnwrap(rendered)
-        XCTAssertEqual(result.width, 32)
-        XCTAssertEqual(result.height, 16)
-        let sample = try color(result, x: 8, y: 8)
-        XCTAssertGreaterThan(sample[0], 240)
-        XCTAssertLessThan(sample[1], 10)
-        XCTAssertLessThan(sample[2], 10)
-    }
-
-    func testSoftwareDecodedWebRTCFramesAreResampledWithoutAnotherDecoder() async throws {
-        let buffer = RTCMutableI420Buffer(width: 640, height: 360)
-        buffer.mutableDataY.initialize(repeating: 96, count: Int(buffer.strideY * buffer.height))
-        buffer.mutableDataU.initialize(repeating: 128, count: Int(buffer.strideU * buffer.chromaHeight))
-        buffer.mutableDataV.initialize(repeating: 128, count: Int(buffer.strideV * buffer.chromaHeight))
-        let frame = RTCVideoFrame(buffer: buffer, rotation: try XCTUnwrap(RTCVideoRotation(rawValue: 0)),
-                                  timeStampNs: 123)
-        let rendered = await VideoReflectionRenderer().render(ReflectionFrame(content: .webRTC(frame)))
-        let result = try XCTUnwrap(rendered)
-        XCTAssertEqual(result.width, 320)
-        XCTAssertEqual(result.height, 180)
-        let sample = try color(result, x: 100, y: 80)
-        XCTAssertLessThan(abs(Int(sample[0]) - Int(sample[1])), 5)
-        XCTAssertLessThan(abs(Int(sample[1]) - Int(sample[2])), 5)
-        XCTAssertEqual(buffer.dataY[0], 96)
-    }
-
-    @MainActor
-    func testInactiveHTTPSDoesNotExposeAStaleDecodedFrame() {
-        let stream = HTTPSLiveStream()
-        XCTAssertNil(stream.reflectionPixelBuffer())
-        stream.stop()
-        XCTAssertNil(stream.reflectionPixelBuffer())
     }
 
     @MainActor

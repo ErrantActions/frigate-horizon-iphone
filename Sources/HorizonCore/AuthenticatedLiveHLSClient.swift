@@ -61,6 +61,7 @@ private final class HLSRequestCancellation: @unchecked Sendable {
 // Delegate state is locked; the session uses an ephemeral, camera-scoped cookie jar.
 public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     public let policy: LiveHLSResourcePolicy
+    public let masterURL: URL
     private let maximumHeight: Int?
     private let lock = NSLock()
     private var session: URLSession!
@@ -78,8 +79,9 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
     private var primedUntil = Date.distantPast
 
     public init(policy: LiveHLSResourcePolicy, cookies: [HTTPCookie], maximumHeight: Int? = nil,
-                configuration: URLSessionConfiguration = .ephemeral) {
+                configuration: URLSessionConfiguration = .ephemeral, masterURL: URL? = nil) {
         self.policy = policy
+        self.masterURL = masterURL ?? policy.canonicalMaster
         self.maximumHeight = maximumHeight
         super.init()
         configuration.urlCache = nil
@@ -95,11 +97,11 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
     }
 
     public func prepareMaster() async throws -> LiveHLSMaster {
-        let (data, _) = try await request(policy.canonicalMaster)
+        let (data, _) = try await request(masterURL)
         guard let text = String(data: data, encoding: .utf8) else { throw HorizonError.unexpectedResponse }
-        let master = try LiveHLSMaster(text: text, policy: policy, url: policy.canonicalMaster,
+        let master = try LiveHLSMaster(text: text, policy: policy, url: masterURL,
             maximumHeight: maximumHeight)
-        let rewritten = Data(try policy.rewritePlaylist(master.playlist, url: policy.canonicalMaster).utf8)
+        let rewritten = Data(try policy.rewritePlaylist(master.playlist, url: masterURL).utf8)
         storePrimedMaster(rewritten)
         return master
     }
@@ -107,15 +109,11 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
     public func load(_ url: URL) async throws -> LiveHLSResource {
         let url = try policy.validate(url)
         let playlist = url.pathExtension.lowercased() == "m3u8"
-        if url == policy.canonicalMaster, let primed = readPrimedMaster() {
-            return LiveHLSResource(data: primed, offset: 0, totalLength: Int64(primed.count), pathExtension: "m3u8")
-        }
-
         let (data, _) = try await request(url)
         if playlist {
             guard let text = String(data: data, encoding: .utf8) else { throw HorizonError.unexpectedResponse }
             let selected: String
-            if url.path == policy.canonicalMaster.path {
+            if policy.isLive && url.path == policy.canonicalMaster.path {
                 selected = try LiveHLSMaster(text: text, policy: policy, url: url, maximumHeight: maximumHeight).playlist
             } else { selected = text }
             let rewritten = Data(try policy.rewritePlaylist(selected, url: url).utf8)
@@ -139,7 +137,7 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
                 return
             }
             let task = session.dataTask(with: request)
-            pending[task.taskIdentifier] = Pending(stream: stream, limit: 16_777_216)
+            pending[task.taskIdentifier] = Pending(stream: stream, limit: 67_108_864)
             lock.unlock()
             cancellation.bind(task)
             task.resume()
@@ -174,7 +172,7 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
                 }
                 let task = session.dataTask(with: request)
                 pending[task.taskIdentifier] = Pending(continuation: continuation,
-                    limit: url.pathExtension.lowercased() == "m3u8" ? 1_048_576 : 16_777_216)
+                    limit: url.pathExtension.lowercased() == "m3u8" ? 1_048_576 : 67_108_864)
                 lock.unlock()
                 cancellation.bind(task)
                 task.resume()
@@ -228,7 +226,10 @@ public final class AuthenticatedLiveHLSClient: NSObject, URLSessionDataDelegate,
             if response.statusCode == 401 { throw HorizonError.unauthorized }
             if response.statusCode == 403 { throw HorizonError.forbidden }
             guard response.statusCode == 200 else { throw HorizonError.http(response.statusCode) }
-            guard response.mimeType != "text/html", response.mimeType != "application/json" else {
+            let playlist = url.pathExtension.lowercased() == "m3u8"
+            let validMime = playlist ? ["application/vnd.apple.mpegurl", "application/x-mpegurl"] :
+                (policy.isLive ? ["video/mp4"] : ["video/mp4", "audio/mp4", "video/mp2t", "audio/aac", "application/octet-stream"])
+            guard response.mimeType.map({ validMime.contains($0.lowercased()) }) == true else {
                 throw HorizonError.unexpectedResponse
             }
             if let encoding = response.value(forHTTPHeaderField: "Content-Encoding"), encoding != "identity",

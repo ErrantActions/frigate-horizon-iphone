@@ -128,6 +128,12 @@ struct RecordingsView: View {
             .horizonScreen()
             .navigationTitle("Recordings")
             .toolbar {
+                ToolbarItem(placement: .secondaryAction) {
+                    NavigationLink { CameraSDReplayView(api: api, camera: camera) } label: {
+                        Label("Camera-SD replay", systemImage: "sdcard")
+                    }
+                    .disabled(!allowed)
+                }
                 ToolbarItem(placement: .cancellationAction) {
                     if standalone { Button("Done") { dismiss() } }
                 }
