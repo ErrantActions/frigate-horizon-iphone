@@ -65,7 +65,7 @@ struct HorizonRoot: View {
             } else if let error = viewerCleanup.error {
                 VStack {
                     ErrorNotice(message: error)
-                    Button("Retry viewer cleanup") { Task { _ = await viewerCleanup.drain() } }
+                    Button("Retry viewer cleanup") { Task { _ = await viewerCleanup.drain(using: api) } }
                 }
                 .padding().background(HorizonPalette.surface)
             } else if let error = talkbackCleanup.error {

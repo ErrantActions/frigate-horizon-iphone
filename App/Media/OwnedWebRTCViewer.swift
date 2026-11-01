@@ -39,14 +39,22 @@ final class ViewerCleanupStore: ObservableObject {
         jobs[key] = job
         return job
     }
-    func drain() async -> Bool {
+    func drain(using currentAPI: HorizonAPI? = nil) async -> Bool {
         let pending = Array(jobs.values)
         for job in pending { _ = await job.value }
-        let failures = Array(failed.values)
-        for owner in failures {
-            let closed = await close(api: owner.api, policy: owner.policy, id: owner.id).value
+        let failures = Array(failed)
+        for (key, owner) in failures {
+            let client: HorizonAPI
+            if let currentAPI, currentAPI.address == owner.api.address,
+               let account = currentAPI.viewingAccountKey, account == owner.api.viewingAccountKey {
+                client = currentAPI
+            } else { client = owner.api }
+            let closed = await close(api: client, policy: owner.policy, id: owner.id).value
             if !closed { return false }
+            failed.removeValue(forKey: key)
+            confirmed.append(key)
         }
+        if failed.isEmpty && !unidentified { error = nil }
         return true
     }
     func unidentifiedCreation() {
@@ -138,7 +146,7 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
             do {
                 await previousWorker?.value
                 _ = await previousCleanup?.value
-                let cleaned = await ViewerCleanupStore.shared.drain()
+                let cleaned = await ViewerCleanupStore.shared.drain(using: api)
                 guard cleaned else { throw HorizonError.message(ViewingMessage.failed) }
                 try self.check(token)
                 let features: ViewingFeatures

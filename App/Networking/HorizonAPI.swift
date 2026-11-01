@@ -27,6 +27,12 @@ final class ViewerTaskDelegate: NSObject, URLSessionTaskDelegate {
 final class HorizonAPI {
     let address: ServerAddress
     let session: URLSession
+    private(set) var viewingAccountKey: String?
+    func bindViewingAccount(username: String) throws {
+        let key = HorizonAccountScope.key(server: address.url.absoluteString, username: username)
+        if let existing = viewingAccountKey, existing != key { throw HorizonError.unauthorized }
+        viewingAccountKey = key
+    }
 
     init(
         address: ServerAddress, cookies: [HTTPCookie] = [],

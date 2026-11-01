@@ -350,6 +350,7 @@ final class AppModel: ObservableObject {
         if let expectedUsername, newProfile.username != expectedUsername {
             throw HorizonError.message("The server returned a different account. Disconnect before switching accounts.")
         }
+        try client.bindViewingAccount(username: newProfile.username)
         if api?.address != client.address || self.profile?.username != newProfile.username {
             try NativePushController.shared.prepareForAccountChange(api: client, username: newProfile.username)
         }

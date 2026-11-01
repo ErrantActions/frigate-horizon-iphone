@@ -50,6 +50,10 @@ does not promise NVIDIA acceleration.
   unless retained by explicit PiP. Server leases are only a crash/loss safeguard;
   DELETE is attempted for each known owner. Failed deletion is retained and can
   be retried from the app-level cleanup notice before starting another pipeline.
+  After reauthentication, cleanup may use the fresh cookie session only when
+  the independently verified profile account and exact server address match
+  the original owner. It never forwards an old cookie/SDP to another account
+  or origin, and cannot use a different account to clean up an expired viewer.
 - Camera Tour switches its single active camera without an invisible incoming
   warmup peer. This intentionally trades the old preloaded handoff for strict
   on-demand ownership. Normal camera/rate/quality changes never alter recordings.
