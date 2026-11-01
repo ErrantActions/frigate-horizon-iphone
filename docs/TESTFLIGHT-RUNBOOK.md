@@ -1,10 +1,12 @@
 # TestFlight publishing runbook for agents
 
-**Current viewing architecture (TestFlight 1034): WebRTC-only, targeting the
-upcoming backend.** The earlier HLS delivery sections below are historical.
-Missing live capability shows upgrade/unavailable; recorded WebRTC is gated
-until its separate server adapter/control contract exists. Do not revive HLS
-or original-file streaming as a compatibility fallback. See
+**Current source: live WebRTC plus capability-gated recorded HTTPS MP4
+architecture.** TestFlight 1034 remains the last uploaded binary; it predates
+the HTTP architecture. The latest owner attachment prohibits deployment from
+this workstream, so do not automatically run the release workflow for this
+update. The earlier HLS sections are historical. Live is owner-reported
+deployed; recorded HTTP discovery/OpenAPI/ranges remain unfinished. Do not
+revive HLS, recorded WebRTC or download-URL streaming as a fallback. See
 [WEBRTC-VIEWING.md](WEBRTC-VIEWING.md) for implementation, exact checks and blockers.
 
 Reusable workflow: Windows workstation, native iOS project, GitHub-hosted macOS

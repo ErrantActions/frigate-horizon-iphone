@@ -14,6 +14,7 @@ struct HorizonRoot: View {
     @ObservedObject private var pictureInPicture = LivePictureInPictureController.shared
     @ObservedObject private var talkbackCleanup = CameraTalkbackCleanupStore.shared
     @ObservedObject private var viewerCleanup = ViewerCleanupStore.shared
+    @ObservedObject private var recordedCleanup = RecordedViewingRegistry.shared
 
     var body: some View {
         TabView(selection: $selection) {
@@ -72,6 +73,13 @@ struct HorizonRoot: View {
                 ErrorNotice(message: error).padding().background(HorizonPalette.surface)
             } else if talkbackCleanup.isPending, let status = talkbackCleanup.status {
                 Text(status).font(.footnote).padding().background(HorizonPalette.surface)
+            } else if let error = recordedCleanup.error {
+                VStack {
+                    ErrorNotice(message: error)
+                    Button(String(localized: "review.retryCleanup", defaultValue: "Retry recorded cleanup")) {
+                        Task { await RecordedViewingRegistry.retryCleanup() }
+                    }
+                }.padding().background(HorizonPalette.surface)
             } else if let issue = model.connectionIssue {
                 HStack(spacing: 12) {
                     Label(issue.title, systemImage: "wifi.exclamationmark")

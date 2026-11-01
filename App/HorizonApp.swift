@@ -27,6 +27,7 @@ struct HorizonApp: App {
             .task { await model.restore() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { Task { await model.refresh() } }
+                else if phase == .background { RecordedViewingRegistry.background() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .horizonMediaAuthenticationExpired)) { notification in
                 if let api = notification.object as? HorizonAPI { model.reportSessionExpiry(from: api) }
@@ -54,6 +55,7 @@ struct HorizonApp: App {
                 }
                 LivePictureInPictureController.shared.updateScope(api: model.api,
                     allowedCameraIDs: Set(model.cameras.filter { $0.settings.enabled }.map(\.id)))
+                RecordedViewingRegistry.updateScope(api: model.api, cameras: Set(model.cameras.map(\.id)))
                 await push.attach(api: model.api, username: model.profile?.username,
                     allowedCameraIDs: model.cameras.map(\.id))
             }

@@ -58,16 +58,51 @@ class TestWebRTCViewing(unittest.TestCase):
         self.assertIn("pendingQuality = QualityIntent(height: height)", peer)
         self.assertIn("self.setQuality(next.height)", peer)
 
-    def test_recorded_viewing_has_no_production_media_or_mock_adapter(self):
+    def test_recorded_http_is_gated_without_guessed_routes_or_mock_adapter(self):
         player = source("App/Media/RecordingPlayer.swift")
         self.assertIn("ViewingMessage.recorded", player)
         self.assertNotIn("URLSession", player)
         self.assertNotIn("AVURLAsset", player)
-        self.assertNotIn("player.seek", player)
+        self.assertTrue("UnavailableRecordedHTTPTransport(address: api.address)" in player)
+        self.assertTrue("transport.qualification.usable" in player)
+        self.assertTrue("player.seek(to:" in player)
         sd = source("App/Views/CameraSDReplayView.swift")
         self.assertNotIn("api.get", sd)
         self.assertNotIn("api.send", sd)
         self.assertNotIn("FakeRecorded", "".join(p.read_text(encoding="utf-8") for p in (ROOT / "App").rglob("*.swift")))
+
+    def test_recorded_asset_uses_supported_resource_loading_and_bounded_authenticated_ranges(self):
+        asset = source("Sources/HorizonCore/RecordedMP4Asset.swift")
+        reader = source("Sources/HorizonCore/RecordedMP4Reader.swift")
+        for token in ["AVAssetResourceLoaderDelegate", "isByteRangeAccessSupported = true",
+                      "reader.length", "didCancel request", "job?.cancel()", "reader.close()",
+                      "RecordedMP4Range.maximumRead", "request.isCancelled"]:
+            self.assertTrue(token in asset, token)
+        for token in ['forHTTPHeaderField: "Range"', "configuration.httpShouldSetCookies = true",
+                      "configuration.urlCache = nil", "completionHandler(nil)", "withTaskCancellationHandler",
+                      "data.count > read.range.count - read.data.count"]:
+            self.assertTrue(token in reader, token)
+        self.assertTrue("AVURLAssetHTTPHeaderFieldsKey" not in asset + reader)
+        self.assertTrue("serverTrust" not in asset + reader)
+
+    def test_recorded_ui_maps_catalog_time_and_has_explicit_pip_and_scope_ownership(self):
+        player = source("App/Media/RecordingPlayer.swift")
+        review = source("App/Views/ReviewWorkspaceView.swift")
+        for token in ["prepared.mapping.mediaTime", "mapping.sourceTime", "item.cancelPendingSeeks()",
+                      "seekGeneration", "autoplay: wantsToPlay", "asset.cancel", "canStartPictureInPictureAutomaticallyFromInline = false"]:
+            if token == "asset.cancel":
+                self.assertTrue("media?.cancel()" in player)
+            else:
+                self.assertTrue(token in player, token)
+        self.assertTrue("store.timeline.timestamp(for:" not in review)
+        self.assertTrue("floor(timestamp / 300)" not in review)
+        self.assertTrue("RecordedViewingRegistry.background()" in source("App/HorizonApp.swift"))
+        self.assertTrue("RecordedViewingRegistry.stopAll()" in source("App/AppModel.swift"))
+
+    def test_recorded_webrtc_control_contract_is_retired(self):
+        core = source("Sources/HorizonCore/RecordedViewing.swift")
+        self.assertTrue("RecordedViewingSession" not in core)
+        self.assertTrue("positionEvents" not in core)
 
     def test_pip_has_a_sample_buffer_renderer_not_an_avplayer_rtc_assumption(self):
         pip = source("App/Media/LivePictureInPictureController.swift")

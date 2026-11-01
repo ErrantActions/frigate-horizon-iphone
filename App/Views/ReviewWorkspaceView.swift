@@ -9,7 +9,6 @@ final class ReviewPlaybackStore: ObservableObject {
     @Published private(set) var range: ReviewTimeRange?
     @Published private(set) var motion: [MotionSample] = []
     @Published private(set) var events: [ReviewSegment] = []
-    @Published private(set) var timeline = PlaybackTimeline(spans: [])
     @Published private(set) var loading = false
     @Published private(set) var missingRecording = false
     @Published private(set) var intendsToPlay = true
@@ -27,7 +26,6 @@ final class ReviewPlaybackStore: ObservableObject {
         clipGeneration = UUID()
         playback.stop()
         loading = true
-        timeline = PlaybackTimeline(spans: [])
         error = nil
         missingRecording = false
         loadedCamera = nil
@@ -93,38 +91,21 @@ final class ReviewPlaybackStore: ObservableObject {
         intendsToPlay = autoplay
         error = nil
         missingRecording = false
-        if loadedCamera == camera, let position = timeline.position(for: timestamp),
-           playback.player.currentItem?.status == .readyToPlay {
-            playback.seek(to: position, autoplay: autoplay)
+        if loadedCamera == camera, playback.loading || playback.player.currentItem != nil {
+            playback.seekToCatalog(timestamp, autoplay: autoplay)
             return
         }
-        playback.stop()
-        timeline = PlaybackTimeline(spans: [])
         loading = true
         defer { if clipGeneration == token { loading = false } }
-        let start = max(range.start, floor(timestamp / 300) * 300)
-        let end = min(start + 300, range.end)
-        guard timestamp >= range.start, timestamp >= start, timestamp < end else { missingRecording = true; return }
-        do {
-            let result: RecordingCoverage = try await api.get([camera, "recordings", "coverage"], query: [
-                URLQueryItem(name: "after", value: String(start)),
-                URLQueryItem(name: "before", value: String(end)),
-                URLQueryItem(name: "timelines", value: "true"),
-            ])
-            guard !Task.isCancelled, clipGeneration == token else { return }
-            guard let spans = result.timelines?.auto else {
-                throw HorizonError.message("The server did not provide the recording timeline needed for accurate scrubbing.")
-            }
-            let mapping = PlaybackTimeline(spans: spans)
-            guard let position = mapping.position(for: timestamp) else { missingRecording = true; return }
-            timeline = mapping
-            loadedCamera = camera
-            playback.open(selection: RecordedViewingSelection(camera: camera, identity: .timeRange(start: start, end: end)),
-                api: api, initialPosition: position, autoplay: autoplay)
-        } catch {
-            guard !Task.isCancelled, clipGeneration == token else { return }
-            self.error = error.localizedDescription
+        guard timestamp >= range.start, timestamp < range.end else { missingRecording = true; return }
+        if let coverage, !coverage.contains(timestamp) {
+            missingRecording = true
+            playback.setPlaying(false)
+            return
         }
+        loadedCamera = camera
+        playback.open(selection: .init(camera: camera, identity: .timeRange(start: range.start, end: range.end)),
+            api: api, sourceRange: range.start...range.end, startTimestamp: timestamp, autoplay: autoplay)
     }
 
     func stop() {
@@ -243,7 +224,8 @@ struct ReviewWorkspaceView: View {
                     }
                 }
             }
-            .task(id: "\(camera)-\(accessKey)") {
+            .task(id: "\(camera)-\(accessKey)-\(scenePhase == .active)") {
+                guard scenePhase == .active else { store.leave(); return }
                 guard model.api === api, allowedCameras.contains(where: { $0.id == camera }) else {
                     store.stop()
                     store.error = "This camera is no longer available to the current account."
@@ -259,8 +241,8 @@ struct ReviewWorkspaceView: View {
             }
             .onReceive(store.playback.$position) { position in
                 guard !scrubbing, !store.loading, !store.playback.isSeeking,
-                      let value = store.timeline.timestamp(for: position) else { return }
-                timestamp = value
+                      store.playback.player.currentItem != nil else { return }
+                timestamp = position
             }
             .onReceive(store.playback.player.publisher(for: \.timeControlStatus)) { playing = $0 != .paused }
             .onDisappear { store.leave() }
@@ -307,6 +289,7 @@ struct ReviewWorkspaceView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     playbackControls(compact: true)
+                    RecordedPlaybackControls(owner: store.playback)
                     timelinePane
                         .frame(height: dynamicTypeSize.isAccessibilitySize
                             ? 176 : max(112, min(140, geometry.size.height * 0.42)))
@@ -506,7 +489,7 @@ private struct ReviewPlayerPane: View {
                     description: Text("Scrub to a recorded section or choose another camera."))
                     .foregroundStyle(.white)
             } else {
-                NativeRecordingSurface(player: playback.player)
+                NativeRecordingSurface(owner: playback)
                 if loading || playback.loading {
                     ProgressView("Opening recording").tint(.white).foregroundStyle(.white)
                 }

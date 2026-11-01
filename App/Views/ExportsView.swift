@@ -390,12 +390,13 @@ private struct ExportPlayerView: View {
                 HorizonHero(title: item.name, subtitle: item.camera,
                     systemImage: "play.rectangle", eyebrow: "Export playback")
                     .padding(.horizontal, 20)
-                NativeRecordingSurface(player: playback.player)
+                NativeRecordingSurface(owner: playback)
                     .background(.black)
                     .clipShape(RoundedRectangle(cornerRadius: HorizonPalette.controlRadius))
                     .padding(.horizontal, 16)
                     .overlay { if playback.loading { ProgressView().tint(.white) } }
                 if let message = error ?? playback.error { ErrorNotice(message: message) }
+                RecordedPlaybackControls(owner: playback)
             }
             .horizonScreen()
             .navigationTitle(item.name)

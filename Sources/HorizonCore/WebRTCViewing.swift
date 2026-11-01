@@ -3,7 +3,7 @@ import Foundation
 public enum ViewingMessage {
     public static var upgrade: String { String(localized: "viewer.upgrade", defaultValue: "This server needs the native WebRTC viewing upgrade. No alternate player will be started.") }
     public static var unavailable: String { String(localized: "viewer.unavailable", defaultValue: "WebRTC viewing is disabled or unavailable. Check server readiness and retry.") }
-    public static var recorded: String { String(localized: "viewer.recorded", defaultValue: "Adaptive recorded WebRTC playback is not available. The server must advertise its recorded-session and timeline-control contract. Original downloads remain available.") }
+    public static var recorded: String { RecordedHTTPError.unavailable.localizedDescription }
     public static var invalid: String { String(localized: "viewer.invalid", defaultValue: "The server returned an invalid or out-of-scope viewing session.") }
     public static var expired: String { String(localized: "viewer.expired", defaultValue: "The viewing lease expired. Reconnect to create a new owned viewer.") }
     public static var failed: String { String(localized: "viewer.failed", defaultValue: "WebRTC playback could not connect. Check media runtime, ICE routes and relay readiness, then retry.") }
@@ -22,8 +22,8 @@ public struct ViewingFeatures: Decodable, Sendable {
             throw HorizonError.message(ViewingMessage.upgrade)
         }
         guard feature.enabled, feature.available else { throw HorizonError.message(ViewingMessage.unavailable) }
-        guard feature.signaling == "frigate-rest-offer-answer-v1", feature.onDemand,
-              feature.recordings == "original_source",
+        guard feature.signaling.map({ $0 == "frigate-rest-offer-answer-v1" }) ?? true,
+              feature.onDemand != false,
               feature.statusTemplate == "{camera_name}/live/webrtc/status" else {
             throw HorizonError.message(ViewingMessage.upgrade)
         }
@@ -36,9 +36,9 @@ public struct LiveWebRTCFeature: Decodable, Sendable {
     public let enabled: Bool
     public let available: Bool
     public let statusTemplate: String
-    public let signaling: String
-    public let onDemand: Bool
-    public let recordings: String
+    public let signaling: String?
+    public let onDemand: Bool?
+    public let recordings: String?
     enum CodingKeys: String, CodingKey {
         case version, enabled, available, signaling, recordings
         case statusTemplate = "status_url_template"; case onDemand = "on_demand"
@@ -49,9 +49,9 @@ public struct LiveWebRTCFeature: Decodable, Sendable {
         enabled = try value.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
         available = try value.decodeIfPresent(Bool.self, forKey: .available) ?? false
         statusTemplate = try value.decodeIfPresent(String.self, forKey: .statusTemplate) ?? ""
-        signaling = try value.decodeIfPresent(String.self, forKey: .signaling) ?? ""
-        onDemand = try value.decodeIfPresent(Bool.self, forKey: .onDemand) ?? false
-        recordings = try value.decodeIfPresent(String.self, forKey: .recordings) ?? ""
+        signaling = try value.decodeIfPresent(String.self, forKey: .signaling)
+        onDemand = try value.decodeIfPresent(Bool.self, forKey: .onDemand)
+        recordings = try value.decodeIfPresent(String.self, forKey: .recordings)
     }
 }
 

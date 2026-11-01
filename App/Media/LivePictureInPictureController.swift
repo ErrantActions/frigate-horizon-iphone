@@ -107,6 +107,7 @@ final class LivePictureInPictureController: NSObject, ObservableObject {
             return
         }
         if owns(value), isActive || isStarting { return }
+        RecordedViewingRegistry.stopPiP()
         stop()
         session = value
         returningToInline = false

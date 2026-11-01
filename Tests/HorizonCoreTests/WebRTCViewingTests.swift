@@ -2,6 +2,12 @@ import XCTest
 @testable import HorizonCore
 
 final class WebRTCViewingTests: XCTestCase {
+    func testDeployedV1MinimumLiveDiscoveryDoesNotRequireRecordedOrStorageMetadata() throws {
+        let features = try JSONDecoder().decode(ViewingFeatures.self, from: Data(#"{"live_webrtc":{"version":1,"enabled":true,"available":true,"status_url_template":"{camera_name}/live/webrtc/status"}}"#.utf8))
+        XCTAssertNoThrow(try features.requireLive())
+        XCTAssertNil(try features.requireLive().recordings)
+        XCTAssertThrowsError(try JSONDecoder().decode(ViewingFeatures.self, from: Data(#"{"live_webrtc":{"version":1,"enabled":true,"available":true,"status_url_template":"{camera_name}/live/webrtc/status","signaling":"whep"}}"#.utf8)).requireLive())
+    }
     func testUnavailableDiscoveryDoesNotRequireUsableSessionMetadata() throws {
         let features = try JSONDecoder().decode(ViewingFeatures.self,
             from: Data(#"{"live_webrtc":{"version":1,"enabled":false,"available":false}}"#.utf8))

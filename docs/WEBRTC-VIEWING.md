@@ -1,225 +1,80 @@
-# Native owned WebRTC viewing
+# Native live WebRTC and recorded HTTPS MP4 review
 
-## Deployment boundary
+## Current authority and deployment boundary
 
-This client targets the upcoming server-owned OME/Coturn integration, not the
-previously deployed HLS player. The owner's supplied contract says the LIVE
-server implementation is tested in source and its image builds, but is **not
-deployed or runtime-qualified**. Recorded WebRTC source/control support is not
-implemented by that live API. Missing support produces upgrade/unavailable
-states, never HLS or direct-original streaming.
+The latest owner handoff supersedes recorded WebRTC: live remains receive-only
+native WebRTC; recorded review will use finite authenticated HTTPS MP4 windows
+and native AVPlayer byte-range seeking. HLS, DASH, plaintext HTTP and recorded
+WebRTC fallback are forbidden. Original downloads/exports remain separate.
 
-No server deployment/settings/camera activation or notification test is part of
-this client work. Original recording, storage, retention, detector and export/
-download policies remain unchanged. CPU encoding is server-owned; the client
-does not promise NVIDIA acceleration.
+The owner reports live deployed at `https://dvr.errantactions.com/`, backend
+`0.19.0-d93250f20a6d-horizon`, with browser decoded video over direct and
+authenticated relay UDP. That is owner-provided browser evidence, not an iPhone
+qualification. TURN TLS, WAN/cellular, long-lived native peers and iOS PiP are
+not certified here.
 
-## Live implementation
+The deployed backend still uses the **old recorded WebRTC path**. Recorded HTTP
+schemas are draft, uncommitted and unvalidated: no HTTP manager/router/range
+endpoint or discovery field is supplied. A version string or live feature does
+not enable recorded HTTP. The app never calls guessed recorded endpoints.
+See [RECORDED-HTTP-REVIEW.md](RECORDED-HTTP-REVIEW.md).
 
-- Discover authenticated `GET /api/native/features`; require version 1
-  `live_webrtc`, exact `frigate-rest-offer-answer-v1` signaling and on-demand
-  original-source storage semantics. Storage fidelity is not VOD capability.
-- Resolve status/session resource URLs within the configured HTTPS API
-  origin and reverse-proxy subpath. Encode the camera as one path component.
-  Answer/candidate/heartbeat/quality/close paths must match this owned UUID.
-  Signaling requests reject redirects, credentials/query fragments and
-  out-of-API endpoints before forwarding auth or SDP.
-- Grid requests its discovered `grid_height`, no audio, no forced relay.
-  Detail Auto/pins use advertised detail heights; Data Saver requests 720p/720p,
-  never a grid-only 360p rung. A force-relay switch is explicit diagnostic
-  opt-in, not the normal default.
-- The pinned native WebRTC SDK accepts the SERVER offer, returned ICE servers,
-  policy and candidates. No client offer, WHEP, direct engine WebSocket or
-  camera/go2rtc URL is used. It creates a receive-only answer with no camera,
-  microphone or sender track. Audio playout uses playback-only AVAudioSession.
-- Answer POST and candidate POST require 204. Local candidates are held until
-  answer acceptance and sent in batches <=32 with SDK MID/index preserved.
-  Null end-of-candidates is never posted.
-- Heartbeat PATCH begins while negotiating, renews the short lease and applies
-  temporary credential updates through the existing peer configuration.
-  Unconfirmed update/expiry stops local playback and issues owned DELETE;
-  credential updates do not trigger routine healthy-peer teardown.
-- Exact quality/Auto PATCH uses the existing peer. Changed cap, mode, audio
-  envelope or diagnostic route may create a fresh session only after old
-  cleanup is accounted for. It does not silently choose another protocol.
-- Creation is not canceled after dispatch: a late 201 is decoded for its UUID
-  and DELETE is awaited even when its view/account generation has ended.
-  Malformed returned resource URLs cannot redirect cleanup to an engine.
-  Unknown creation identity is surfaced, not replayed.
-- Local peers/renderers stop synchronously on navigation/offscreen/background
-  unless retained by explicit PiP. Server leases are only a crash/loss safeguard;
-  DELETE is attempted for each known owner. Failed deletion is retained and can
-  be retried from the app-level cleanup notice before starting another pipeline.
-  After reauthentication, cleanup may use the fresh cookie session only when
-  the independently verified profile account and exact server address match
-  the original owner. It never forwards an old cookie/SDP to another account
-  or origin, and cannot use a different account to clean up an expired viewer.
-- Camera Tour switches its single active camera without an invisible incoming
-  warmup peer. This intentionally trades the old preloaded handoff for strict
-  on-demand ownership. Normal camera/rate/quality changes never alter recordings.
-- Native inline rendering uses RTCMTLVideoView. PiP renders the same decoded
-  track through AVSampleBufferDisplayLayer, with bounded frame delivery and
-  rendering-only color/crop/orientation conversion, not a second peer, decoder,
-  resize/re-encode pipeline or AVPlayer WebRTC adapter.
-- Diagnostics start at actual SDK decoded-frame callbacks, not offer receipt.
-  Sanitized stats expose selected candidate type/protocol/relay protocol and
-  frame counters, never addresses, SDP, tokens or TURN credentials.
+No server agent contact, server deployment/settings, DNS/router changes,
+camera activation, source/retention/detector/Coral changes or test push is part
+of this work. The latest attachment prohibits deployment from this workstream:
+this update uses tests and an unsigned generic-device build, not TestFlight.
 
-Existing API cookies and write CSRF headers remain in use. No TLS/ATS exception,
-notification camera-scope write or test push is added to video startup.
-`camera_ids: []` continues to mean no camera alerts; the preceding actual-
-selection/serialized-renewal fixes remain.
+## Live implementation retained
 
-## Recorded playback: not implemented by the live API
+- Authenticated `native/features` discovery requires live version 1,
+  enabled/available and `{camera_name}/live/webrtc/status`. Optional legacy
+  signaling metadata, if supplied, must agree with REST offer/answer v1;
+  omitted storage metadata is not a live or recorded capability gate.
+- Camera names are encoded as one component. Signaling resource URLs remain
+  inside the configured HTTPS API origin/proxy subpath and exact owned UUID.
+  Redirects, credentials/query fragments and direct engine URLs are rejected.
+- Grid uses advertised grid height and audio false; detail uses **session**
+  renditions, Auto/pins and configured caps. Data Saver caps detail at 720;
+  no grid-only rung is substituted for a full-camera preference.
+- The maintained pinned SDK receives the server offer/candidates, creates and
+  sets a receive-only answer, then posts it. No capture tracks/client offer,
+  WHEP, engine WebSocket, camera/RTSP/go2rtc API or alternate transport exists.
+- Answer/candidate POST success is 204. SDK MID/index are preserved; batches
+  are at most 32 and wait for answer success. Null ICE callbacks are not sent.
+- Advertised heartbeat PATCH renews the lease/temporary ICE configuration;
+  quality PATCH reuses the peer. Secrets/SDP/candidates stay memory-only, with
+  private SDK debug logging disabled.
+- Known failures use bounded recovery. Auth recovery is coordinated; 403 is
+  denial, admission limits are explicit, and uncertain creation is quarantined.
+  Late creation is awaited and its owned session deleted.
+- Local peers/renderers stop on offscreen/navigation/background unless explicit
+  PiP owns them. Failed owned deletion is retained/retryable; fresh-auth cleanup
+  requires the same independently verified account and exact server address.
+- Native RTCMTL inline rendering and same-track sample-buffer PiP remain;
+  there is no second peer/decoder/encoder. No invisible Camera Tour warmup.
+- Diagnostics use decoded-track callbacks and sanitized candidate type/protocol,
+  frame counters and timings, not SDP, credential or address logging.
 
-Recorded/event/export/preview/camera-SD streaming now explicitly shows an
-upgrade requirement. No live session is substituted and no HLS/original-file
-AVURLAsset is created. Catalog navigation, thumbnails, bookmarks, protection
-controls and original-file downloads/exports remain.
+Normal TLS/ATS, API cookies/write CSRF, audio/mute and fold-aware layout remain.
+Notification renewal preserves the installation's actual camera selection,
+including `camera_ids: []`, confidence policy and private photo behavior.
 
-`RecordedViewingSession`, source selection, capabilities and authoritative
-position/generation interfaces are prepared. The only implementation is a
-test-only fake. Timeline unit tests reject stale generation/sequence updates
-and cannot be presented as working production seeks. Existing AVPlayer-typed
-UI observables are compatibility controls without a media item or network
-loader; their play/seek actions never change a server source.
+## Historical delivered binary
 
-### Proposal for owner coordination (NOT deployed or invoked by this app)
+TestFlight **1034**, source `7bb4ab9`, remains the latest uploaded binary:
+[release 41290042530](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41290042530).
+It passed 336 Core tests, 61 CI guards, app/NSE signing, archive/export/upload.
+Apple build `6c282cfd-8b0c-478a-a664-235b58b42fdc` was `VALID`,
+`usesNonExemptEncryption=false`, `IN_BETA_TESTING`, Owner Testing Auto.
+It does **not** contain the new recorded HTTP architecture.
 
-The backend owner must define and qualify a separate recorded-viewing feature.
-Suggested versioned DTOs, not claims about existing endpoint names:
+`APNS_IMAGES_BACKEND_READY=false` and its existing readiness timestamp remain
+unchanged. No protected release rule or NSE/signing profile was altered.
 
-```json
-{
-  "recorded_webrtc": {
-    "version": 1,
-    "enabled": true,
-    "available": true,
-    "discovery_url_template": "SERVER_DEFINED_CAMERA_SCOPED_PATH",
-    "signaling": "frigate-rest-offer-answer-v1",
-    "timeline": "authoritative-source-time-v1",
-    "shared_viewer_budget": true
-  }
-}
-```
+## Unverified acceptance
 
-Creation should accept only an authorized camera plus catalog identity:
-
-```json
-{
-  "source": {"kind": "recording_range", "start": 1800000000, "end": 1800000060},
-  "height": null,
-  "max_height": 1080,
-  "audio": true,
-  "force_relay": false
-}
-```
-
-Other source kinds need documented event/export IDs or a camera-bound SD
-recording identity, never paths, source URLs, storage secrets or FFmpeg options.
-The response should advertise its OWN ladder, rates, play/pause/seek capabilities,
-offer/ICE and scoped answer/candidates/heartbeat/quality/close/control/position
-resources with the same ownership/expiry safety as live viewing.
-
-Control and authoritative acknowledgement need an epoch/generation fence:
-
-```json
-{
-  "command": "seek",
-  "source_timestamp": 1800000030,
-  "generation": "CLIENT_GENERATED_UUID"
-}
-```
-
-```json
-{
-  "generation": "CLIENT_GENERATED_UUID",
-  "sequence": 21,
-  "source_timestamp": 1800000030.04,
-  "playing": false,
-  "rate": 1,
-  "media_epoch": "SERVER_DEFINED_SDK_OBSERVABLE_FRAME_FENCE",
-  "gap": false
-}
-```
-
-Generation-tagged position JSON alone is insufficient to identify stale
-already-decoded WebRTC frames. The backend must specify a public-SDK-observable
-track/frame epoch boundary or equivalent verified fence for seek transitions.
-The client must not infer the recording playhead from live elapsed/wall time.
-Pause must stop encoding while retaining only bounded resume/read-protection
-state. Gaps, removals, archive lookup, accurate boundary seeks and supported
-rates require authoritative acknowledgement. Intermediate copies must be
-temporary, bounded and cleaned up under the shared live/recorded CPU budget.
-
-Until that contract and actual source adapter are qualified, recorded viewing
-remains unavailable even if live discovery says `recordings: original_source`.
-
-## Client validation and delivery
-
-TestFlight **1034**, source `7bb4ab9`,
-[release 41290042530](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41290042530),
-is processed for Owner Testing Auto. Apple build
-`6c282cfd-8b0c-478a-a664-235b58b42fdc` is `VALID`, export compliance is cleared
-(`usesNonExemptEncryption=false`) and internal state is `IN_BETA_TESTING`.
-
-| Exact check/command | Result |
-| --- | --- |
-| `swift test` | 336 tests, 0 failures |
-| `python3 -m unittest discover -s tools/tests` | 61 CI guards passed |
-| Generic iOS-device Release compilation | Passed in [41289772435](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41289772435) |
-| Final app/NSE Release compilation/signing, archive, export, upload | All passed on final source |
-| Actual live/recorded decoded frames, network/relay tests | Not run; backend/runtime access and recorded contract unavailable |
-| Simulator/UI and physical-iPhone tests | Not run; no physical device control is available |
-
-```sh
-xcodebuild \
-  -project FrigateHorizon.xcodeproj \
-  -scheme FrigateHorizon \
-  -configuration Release \
-  -destination 'generic/platform=iOS' \
-  -derivedDataPath build/DerivedData \
-  CODE_SIGNING_ALLOWED=NO build
-```
-
-Final signing used the unchanged protected `testflight.yml` workflow and
-`.github/scripts/testflight.sh`, with owner-approved `confirm_upload=true` and
-the existing explicit `allow_pending_image_backend=true` input.
-`APNS_IMAGES_BACKEND_READY=false` and its `2026-10-30T05:27:40Z` timestamp are
-unchanged. No release protection, profile validator or NSE requirement was
-removed. Obsolete HLS tests/players were deleted; the new suite includes DTO/
-lifecycle contract tests and a clearly isolated recorded-session fake, not
-proof that OME playback, TURN/TLS or production seeks work.
-
-Changed client areas:
-
-- `Sources/HorizonCore/WebRTCViewing.swift`: live discovery, scoped resources,
-  configuration, ICE/candidates, lease and generation validation.
-- `App/Media/OwnedWebRTCViewer.swift`: SDK negotiation, REST ownership,
-  heartbeat, serialized quality, cleanup, sanitized stats and receive-only audio.
-- `App/Media/RTCViewerRendering.swift` and PiP/reflection integration: native
-  rendering and one explicit background owner.
-- `App/Networking/HorizonAPI.swift`, account binding and navigation: protected
-  signaling with exact-address/account cleanup after reauthentication.
-- Recorded/incident/SD media UI: unavailable gates without URL assets or local
-  synthetic seeks; catalog/protection/original downloads retained.
-- `Sources/HorizonCore/RecordedViewing.swift` and tests: future interfaces and
-  stale-generation rejection, not a production recorded adapter.
-- Localized readiness messages and no-hidden-tour-preload policy.
-
-## Required physical/runtime acceptance still pending
-
-- Deploy/enable the live integration under its separate owner workflow.
-- Actual grid/detail decoded frames, cold/warm first-frame timing, Data Saver,
-  Auto bandwidth changes without peer recreation and pin/Auto transitions.
-- Audio/mute/orientation/PiP; offscreen/background/canceled-create cleanup.
-- JWT expiry, camera revocation, capacity, interrupted signaling and recovery.
-- LAN, actual cellular and explicit forced relay with selected ICE stats.
-- Sustained relay beyond credential lifetime; do not infer TURN/TLS from ports.
-- Server evidence of final-viewer encoder/input shutdown and unchanged originals.
-- A deployed recorded-session contract, real adaptive recorded frames and
-  measured seek/gap/position/pause/rate accuracy, not mocked UI movement.
-
-This Windows session has no physical iPhone or deployed OME runtime access.
-Fixtures, contract tests, native device compilation and TestFlight distribution
-cannot satisfy those runtime/relay/device gates.
+Real iPhone H264/audio, grid/detail transitions, pins/Auto, long-running direct/
+relay sessions, TURN TLS/WAN/cellular, PiP restoration and final-viewer producer
+shutdown still need authorized device/server evidence. Recorded HTTP acceptance
+also requires its finalized and deployed discovery/OpenAPI/range contract.
+Do not revive any retired transport to conceal these boundaries.

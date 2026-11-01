@@ -121,7 +121,7 @@ struct RecordingsView: View {
                     HorizonSectionHeader(title: "Available footage",
                         subtitle: "\(store.windows.count) indexed ranges", systemImage: "film")
                 } footer: {
-                    Text("Separate ranges indicate recording gaps. Playback uses original server recordings; missing footage is never filled or implied.")
+                    Text(String(localized: "review.originalsPreserved", defaultValue: "Separate ranges indicate recording gaps. Viewing uses temporary server windows; original recordings and downloads stay unchanged."))
                 }
                 .listRowBackground(HorizonPalette.surface)
             }
