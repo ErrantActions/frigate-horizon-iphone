@@ -278,23 +278,49 @@ final class AuthenticatedLiveHLSTests: XCTestCase {
             if path.hasSuffix("segment.mp4") { return (200, ["Content-Type": "video/mp4"], segment) }
             return (404, ["Content-Type": "text/plain"], Data())
         }
-        _ = try await client.prepareMaster()
-        let source = try await AuthenticatedLiveHLSAsset(client: client)
-        defer { source.close() }
-        let item = AVPlayerItem(asset: source.asset)
-        item.preferredPeakBitRate = 1_876_000
-        let player = AVPlayer(playerItem: item)
-        defer { player.pause(); player.replaceCurrentItem(with: nil) }
-        player.play()
+        var clients = [try XCTUnwrap(client)]
+        for camera in ["garden", "deck"] {
+            let policy = try LiveHLSResourcePolicy(address: ServerAddress("https://horizon.invalid/base"), camera: camera)
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [HLSFixtureProtocol.self]
+            let cookie = try XCTUnwrap(HTTPCookie(properties: [
+                .name: "frigate_token", .value: "synthetic-session", .domain: "horizon.invalid",
+                .path: "/base", .secure: "TRUE",
+            ]))
+            clients.append(AuthenticatedLiveHLSClient(policy: policy, cookies: [cookie], configuration: configuration))
+        }
+        var sources: [AuthenticatedLiveHLSAsset] = []
+        var players: [AVPlayer] = []
+        defer {
+            for player in players { player.pause(); player.currentItem?.asset.cancelLoading(); player.replaceCurrentItem(with: nil) }
+            for source in sources { source.close() }
+            for client in clients { client.invalidate() }
+        }
+        for client in clients {
+            _ = try await client.prepareMaster()
+            let source = try await AuthenticatedLiveHLSAsset(client: client)
+            sources.append(source)
+            let item = AVPlayerItem(asset: source.asset)
+            item.preferredPeakBitRate = 1_876_000
+            let player = AVPlayer(playerItem: item)
+            players.append(player)
+            player.play()
+        }
         let deadline = Date().addingTimeInterval(12)
         while Date() < deadline {
-            if item.status == .failed { break }
-            if item.status == .readyToPlay && trace.paths.contains(where: { $0.hasSuffix("segment.mp4") }) { break }
+            if players.contains(where: { $0.currentItem?.status == .failed }) { break }
+            if players.allSatisfy({ $0.currentItem?.status == .readyToPlay }),
+               ["front", "garden", "deck"].allSatisfy({ camera in
+                   trace.paths.contains { $0.contains("/\(camera)/") && $0.hasSuffix("segment.mp4") }
+               }) { break }
             try await Task.sleep(for: .milliseconds(50))
         }
-        XCTAssertEqual(item.status, .readyToPlay, item.error?.localizedDescription ?? "Fixture HLS did not become ready")
-        XCTAssertTrue(trace.paths.contains(where: { $0.hasSuffix("init.mp4") }), "\(trace.paths)")
-        XCTAssertTrue(trace.paths.contains(where: { $0.hasSuffix("segment.mp4") }), "\(trace.paths)")
+        XCTAssertEqual(players.count, 3)
+        for player in players { XCTAssertEqual(player.currentItem?.status, .readyToPlay) }
+        for camera in ["front", "garden", "deck"] {
+            XCTAssertTrue(trace.paths.contains { $0.contains("/\(camera)/") && $0.hasSuffix("init.mp4") })
+            XCTAssertTrue(trace.paths.contains { $0.contains("/\(camera)/") && $0.hasSuffix("segment.mp4") })
+        }
     }
 }
 

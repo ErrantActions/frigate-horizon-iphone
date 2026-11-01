@@ -1390,6 +1390,10 @@ not reconnect every camera at once. Cancellation during backoff cannot reopen a
 consumer. 401 requests the shared sign-in UI once; 403, certificate failures and
 unrecognized packaging/decoding errors do not enter a retry or transport loop.
 Exhaustion is explicit and offers manual reconnect.
+An AVPlayer-closing loopback response during ABR/seek is scoped to that request;
+it cancels its origin consumer without failing the entire camera. This only
+handles local response writes to the player. Origin HTTP/auth/TLS, playlist and
+packager errors still propagate through the normal failure/recovery policy.
 
 Diagnostics separately measure status request duration, first master request,
 first child playlist and advertised init-map request durations (including first
@@ -1400,6 +1404,8 @@ dropped video frames, numeric AVPlayer error codes and the observed sequence of
 is included. Rotating init names are classified from `EXT-X-MAP`, not guessed.
 Diagnostic publications are throttled to once per second except first-frame/
 failure milestones, avoiding unnecessary grid redraws.
+Unavailable access/error logs or invalid bitrate samples are reported as
+**not observed**, never substituted with zero stalls or dropped frames.
 
 Notification attachment on an equivalent API/account updates authorization for
 private images without re-registering or resetting camera drafts. Auth renewal

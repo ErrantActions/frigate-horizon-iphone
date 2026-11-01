@@ -34,6 +34,8 @@ class TestHLSStartup(unittest.TestCase):
         self.assertIn("player.automaticallyWaitsToMinimizeStalling = true", live)
         self.assertIn("numberOfDroppedVideoFrames", live)
         self.assertIn("errorStatusCode", live)
+        self.assertIn('?? "not observed"', live)
+        self.assertNotIn("numberOfDroppedVideoFrames ?? 0", live)
         self.assertIn("lastMetricsPublishedAt >= 1", live)
 
     def test_auth_and_notification_refresh_do_not_replay_stale_selections(self):
@@ -44,3 +46,10 @@ class TestHLSStartup(unittest.TestCase):
         self.assertIn("self.api === api, self.username == username", push)
         self.assertIn("try actualSelection.renewalCameras()", push)
         self.assertIn("actualSelection.confirm(device.cameraIDs)", push)
+
+    def test_avplayer_closing_an_old_resource_is_not_an_origin_failure(self):
+        proxy = source("Sources/HorizonCore/LiveHLSLoopbackProxy.swift")
+        self.assertIn("catch HLSLocalDeliveryError.requestClosed", proxy)
+        self.assertEqual(proxy.count("throwing: HLSLocalDeliveryError.requestClosed"), 2)
+        self.assertIn("self.onFailure?(error)", proxy)
+        self.assertNotIn("catch is URLError", proxy)

@@ -289,11 +289,20 @@ final class HLSLiveStream: ObservableObject {
         guard force || now - lastMetricsPublishedAt >= 1 else { return }
         lastMetricsPublishedAt = now
         let access = player.currentItem?.accessLog()?.events.last
-        let errors = player.currentItem?.errorLog()?.events.suffix(8).map(\.errorStatusCode) ?? []
+        let errors = player.currentItem?.errorLog()?.events.suffix(8).map(\.errorStatusCode)
+        let observed = access.flatMap { event in
+            event.observedBitrate.isFinite && event.observedBitrate >= 0 ? event.observedBitrate.formatted() : nil
+        } ?? "not observed"
+        let indicated = access.flatMap { event in
+            event.indicatedBitrate.isFinite && event.indicatedBitrate >= 0 ? event.indicatedBitrate.formatted() : nil
+        } ?? "not observed"
+        let stalls = access.map { String($0.numberOfStalls) } ?? "not observed"
+        let dropped = access.map { String($0.numberOfDroppedVideoFrames) } ?? "not observed"
+        let errorCodes = errors.map { String(describing: $0) } ?? "not observed"
         metrics = measurements.report + "\nDecoded resolutions: \(transitions.joined(separator: " > "))" +
-            "\nObserved bps: \((access?.observedBitrate ?? 0).formatted()); indicated bps: \((access?.indicatedBitrate ?? 0).formatted())" +
-            "\nStalls: \(access?.numberOfStalls ?? 0); dropped video frames: \(access?.numberOfDroppedVideoFrames ?? 0)" +
-            "\nAVPlayer error codes: \(errors)"
+            "\nObserved bps: \(observed); indicated bps: \(indicated)" +
+            "\nStalls: \(stalls); dropped video frames: \(dropped)" +
+            "\nAVPlayer error codes: \(errorCodes)"
     }
 
     private func recoverLiveEdge(target: Double, item: AVPlayerItem, token: UUID) {

@@ -3,6 +3,8 @@ import Foundation
 import Network
 import Security
 
+private enum HLSLocalDeliveryError: Error { case requestClosed }
+
 struct LiveHLSLocalRequest {
     let url: URL
     let range: HLSByteRange?
@@ -274,6 +276,9 @@ private final class LiveHLSLoopbackProxy {
                     if chunked { try await self.send(connection, data: Data("0\r\n\r\n".utf8)) }
                 }
                 try await self.finishSending(connection)
+            } catch HLSLocalDeliveryError.requestClosed {
+                // AVPlayer can close an old request during ABR/seek without ending playback.
+                return
             } catch {
                 guard !self.closed, !Task.isCancelled else { return }
                 self.onFailure?(error)
@@ -300,7 +305,7 @@ private final class LiveHLSLoopbackProxy {
     private func send(_ connection: NWConnection, data: Data) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: data, completion: .contentProcessed { error in
-                if let error { continuation.resume(throwing: error) }
+                if error != nil { continuation.resume(throwing: HLSLocalDeliveryError.requestClosed) }
                 else { continuation.resume() }
             })
         }
@@ -311,7 +316,7 @@ private final class LiveHLSLoopbackProxy {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: nil, contentContext: .finalMessage, isComplete: true,
                 completion: .contentProcessed { error in
-                    if let error { continuation.resume(throwing: error) }
+                    if error != nil { continuation.resume(throwing: HLSLocalDeliveryError.requestClosed) }
                     else { continuation.resume() }
                 })
         }
