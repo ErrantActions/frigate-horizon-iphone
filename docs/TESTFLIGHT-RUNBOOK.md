@@ -1,5 +1,12 @@
 # TestFlight publishing runbook for agents
 
+**Current viewing architecture (TestFlight 1034): WebRTC-only, targeting the
+upcoming backend.** The earlier HLS delivery sections below are historical.
+Missing live capability shows upgrade/unavailable; recorded WebRTC is gated
+until its separate server adapter/control contract exists. Do not revive HLS
+or original-file streaming as a compatibility fallback. See
+[WEBRTC-VIEWING.md](WEBRTC-VIEWING.md) for implementation, exact checks and blockers.
+
 Reusable workflow: Windows workstation, native iOS project, GitHub-hosted macOS
 builds, and manual distribution signing. No local Mac is required for this path.
 
@@ -1472,6 +1479,41 @@ client-side or disguised as authentication failure. No physical iPhone is
 available here to qualify native tolerance or collect production playlists;
 that remains an explicit device/packager acceptance blocker, not a diagnosed
 server defect.
+
+### Upcoming-backend WebRTC-only delivery
+
+TestFlight **1034**, source `7bb4ab9`,
+[run 41290042530](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41290042530),
+passed **336 Core contract tests, zero failures, and 61 CI guards**. Full
+Release app/NSE compilation/signing, archive, export and upload succeeded.
+Apple build `6c282cfd-8b0c-478a-a664-235b58b42fdc` reports `VALID`,
+`usesNonExemptEncryption=false` and `IN_BETA_TESTING`; Owner Testing Auto contains
+it. The tests include contract doubles, not actual OME/relay/recorded frames.
+Obsolete HLS fixtures were removed, so counts should not be compared directly
+to the previous HLS suite.
+
+[Qualification 41289772435](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41289772435)
+passed the same Core/guard suite and generic iOS-device Release compilation,
+including the maintained WebRTC 156 SDK, receive-only peer, sample-buffer PiP
+host and localized readiness states. Final same-account cleanup changes were
+also compiled and signed by the release workflow. An initial declaration-scope
+compiler failure was fixed before successful checks.
+
+The owner explicitly approved autonomous TestFlight delivery of this upcoming-
+backend client. Existing protected environment approval and the explicit
+pending-image-backend input were retained; `APNS_IMAGES_BACKEND_READY=false`
+and its `2026-10-30T05:27:40Z` timestamp are unchanged. No profile/NSE gate was
+removed. No simulator/UI tests, server deployment/settings/camera changes,
+server-agent contact or test notifications were performed.
+
+**This is not a production playback qualification.** Per the owner's contract,
+the new live integration is not deployed and recorded adaptation/control APIs
+are undefined. The current HLS deployment therefore gets an explicit upgrade
+state in this build. Actual grid/detail/recorded frames, cold/warm startup, Auto,
+Data Saver, audio, PiP, LAN/cellular/forced relay, long-lived TURN credentials,
+load/cleanup and server original-file hash/length evidence remain blocked.
+Recorded endpoint/seek/frame-epoch DTOs are proposals only, documented in
+[WEBRTC-VIEWING.md](WEBRTC-VIEWING.md); no live endpoint is used as VOD.
 
 ### Automatic internal tester distribution
 

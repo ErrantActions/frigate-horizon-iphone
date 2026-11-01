@@ -38,21 +38,26 @@ recording gaps and recovery details remain in the backend release handoff.
 
 The next TestFlight build **must support opt-in images**. Local source now adds
 a Notification Service Extension (NSE), authenticated image downloading,
-dedicated shared-Keychain state, and dual-profile signing guards. Build 1033
-passed 391 core and 66 CI guard tests, full Release app/NSE compilation and signing,
+dedicated shared-Keychain state, and dual-profile signing guards. Build 1034
+passed 336 core and 61 CI guard tests, full Release app/NSE compilation and signing,
 archive/export/upload. Apple reports valid processing, cleared export compliance
 and internal beta testing; Owner Testing Auto includes the build.
 Actual phone APNs/image delivery remains unverified.
+Build 1034 changes viewing to the upcoming WebRTC-only backend and removes HLS
+viewing. Missing live support and undefined recorded support show upgrade states.
+Notification camera choices, confidence/photo policy and device registration
+are independent of this discovery; video startup does not register or reset
+this installation. Existing original downloads and the NSE remain intact.
 
 The approved extension App ID and App Store profile are now created, using the
 existing distribution certificate. Both live profiles passed the dual-profile
 validator, and only `NOTIFICATION_SERVICE_PROFILE_BASE64` was added to GitHub.
 The main profile, certificate, upload credentials, and server provider key were
 not replaced. A secure local extension-profile copy was verified against Apple.
-Whole-app/NSE signing and export passed through build 1033.
+Whole-app/NSE signing and export passed through build 1034.
 
 Builds 1017/1018 were explicitly uploaded before backend readiness using
-`allow_pending_image_backend=true`. Builds 1021/1022/1023/1024/1025/1026/1028/1029/1030/1031/1032/1033 used the same explicit
+`allow_pending_image_backend=true`. Builds 1021/1022/1023/1024/1025/1026/1028/1029/1030/1031/1032/1033/1034 used the same explicit
 workflow input after recovery for native connection/live HLS improvements and
 native server settings/notification setup, including the settings navigation fix;
 the image-ready variable remained false. Build 1022 was explicitly requested by

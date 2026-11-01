@@ -155,6 +155,58 @@ temporary, bounded and cleaned up under the shared live/recorded CPU budget.
 Until that contract and actual source adapter are qualified, recorded viewing
 remains unavailable even if live discovery says `recordings: original_source`.
 
+## Client validation and delivery
+
+TestFlight **1034**, source `7bb4ab9`,
+[release 41290042530](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41290042530),
+is processed for Owner Testing Auto. Apple build
+`6c282cfd-8b0c-478a-a664-235b58b42fdc` is `VALID`, export compliance is cleared
+(`usesNonExemptEncryption=false`) and internal state is `IN_BETA_TESTING`.
+
+| Exact check/command | Result |
+| --- | --- |
+| `swift test` | 336 tests, 0 failures |
+| `python3 -m unittest discover -s tools/tests` | 61 CI guards passed |
+| Generic iOS-device Release compilation | Passed in [41289772435](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41289772435) |
+| Final app/NSE Release compilation/signing, archive, export, upload | All passed on final source |
+| Actual live/recorded decoded frames, network/relay tests | Not run; backend/runtime access and recorded contract unavailable |
+| Simulator/UI and physical-iPhone tests | Not run; no physical device control is available |
+
+```sh
+xcodebuild \
+  -project FrigateHorizon.xcodeproj \
+  -scheme FrigateHorizon \
+  -configuration Release \
+  -destination 'generic/platform=iOS' \
+  -derivedDataPath build/DerivedData \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+Final signing used the unchanged protected `testflight.yml` workflow and
+`.github/scripts/testflight.sh`, with owner-approved `confirm_upload=true` and
+the existing explicit `allow_pending_image_backend=true` input.
+`APNS_IMAGES_BACKEND_READY=false` and its `2026-10-30T05:27:40Z` timestamp are
+unchanged. No release protection, profile validator or NSE requirement was
+removed. Obsolete HLS tests/players were deleted; the new suite includes DTO/
+lifecycle contract tests and a clearly isolated recorded-session fake, not
+proof that OME playback, TURN/TLS or production seeks work.
+
+Changed client areas:
+
+- `Sources/HorizonCore/WebRTCViewing.swift`: live discovery, scoped resources,
+  configuration, ICE/candidates, lease and generation validation.
+- `App/Media/OwnedWebRTCViewer.swift`: SDK negotiation, REST ownership,
+  heartbeat, serialized quality, cleanup, sanitized stats and receive-only audio.
+- `App/Media/RTCViewerRendering.swift` and PiP/reflection integration: native
+  rendering and one explicit background owner.
+- `App/Networking/HorizonAPI.swift`, account binding and navigation: protected
+  signaling with exact-address/account cleanup after reauthentication.
+- Recorded/incident/SD media UI: unavailable gates without URL assets or local
+  synthetic seeks; catalog/protection/original downloads retained.
+- `Sources/HorizonCore/RecordedViewing.swift` and tests: future interfaces and
+  stale-generation rejection, not a production recorded adapter.
+- Localized readiness messages and no-hidden-tour-preload policy.
+
 ## Required physical/runtime acceptance still pending
 
 - Deploy/enable the live integration under its separate owner workflow.
