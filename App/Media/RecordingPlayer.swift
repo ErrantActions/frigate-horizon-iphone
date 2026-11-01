@@ -289,6 +289,12 @@ final class RecordingPlayer: ObservableObject {
         manager = nil; capabilities = nil; pendingSeek = nil
     }
     func releaseInline() { inlineAttached = false; if !RecordedViewingRegistry.ownsPiP(self) { stop() } }
+    func reattachPiP(selection: RecordedViewingSelection, api: HorizonAPI) -> Bool {
+        guard self.selection == selection, self.api === api,
+              RecordedViewingRegistry.ownsPiP(self), player.currentItem != nil else { return false }
+        inlineAttached = true
+        return true
+    }
     func pictureInPictureFailed() {
         error = String(localized: "review.pipFailed", defaultValue: "Recorded Picture in Picture could not start. Wait for decoded video and try again.")
     }
@@ -490,6 +496,9 @@ struct RecordingPlaybackView: View {
     @Environment(\.scenePhase) private var phase
     @StateObject private var playback = RecordingPlayer()
     private var allowed: Bool { model.api === api && model.cameras.contains(where: { $0.id == camera }) }
+    private var selection: RecordedViewingSelection {
+        .init(camera: camera, identity: identity ?? .timeRange(start: start, end: end))
+    }
     var body: some View {
         VStack {
             NativeRecordingSurface(owner: playback)
@@ -498,8 +507,10 @@ struct RecordingPlaybackView: View {
             if let error = playback.error { ErrorNotice(message: error) }
         }
         .task(id: "\(allowed)-\(phase == .active)-\(camera)-\(start)-\(end)") {
-            guard allowed, phase == .active, end > start else { playback.stop(); return }
-            playback.open(selection: .init(camera: camera, identity: identity ?? .timeRange(start: start, end: end)),
+            guard allowed, start.isFinite, end.isFinite, end > start else { playback.stop(); return }
+            guard phase == .active else { playback.releaseInline(); return }
+            if playback.reattachPiP(selection: selection, api: api) { return }
+            playback.open(selection: selection,
                 api: api, sourceRange: start...end, startTimestamp: initialTimestamp, autoplay: true)
         }
         .onDisappear { playback.releaseInline() }

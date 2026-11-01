@@ -104,6 +104,10 @@ class TestWebRTCViewing(unittest.TestCase):
         self.assertTrue("Task { @MainActor in RecordedViewingRegistry.retainPiP(self.owner, token: self.token) }" in player)
         self.assertTrue("ownsPiP(self.owner, token: self.token)" in player)
         self.assertTrue("player.belongs(to: scopedAPI, cameras: scopedCameras)" in player)
+        self.assertTrue("guard phase == .active else { playback.releaseInline(); return }" in player)
+        self.assertTrue("playback.reattachPiP(selection: selection, api: api)" in player)
+        self.assertTrue("self.selection == selection, self.api === api" in player)
+        self.assertTrue("store.playback.reattachPiP(" in review)
 
     def test_recorded_webrtc_control_contract_is_retired(self):
         core = source("Sources/HorizonCore/RecordedViewing.swift")

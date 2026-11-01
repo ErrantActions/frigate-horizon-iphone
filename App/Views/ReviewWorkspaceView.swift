@@ -231,6 +231,10 @@ struct ReviewWorkspaceView: View {
                     store.error = "This camera is no longer available to the current account."
                     return
                 }
+                if let range = store.range, store.playback.reattachPiP(
+                    selection: .init(camera: camera, identity: .timeRange(start: range.start, end: range.end)), api: api) {
+                    return
+                }
                 await store.prepare(api: api, camera: camera, day: day, timestamp: timestamp,
                     autoplay: resumeAfterCameraChange)
             }
