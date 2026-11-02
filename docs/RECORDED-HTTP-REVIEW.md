@@ -162,7 +162,14 @@ job `125032133316`.
 The first native run caught an exact floating-point fixture assertion
 (`11.999999999999998` versus `12`); its explicit 1e-9 tolerance was corrected.
 Playback timestamps were not rounded/rebased to make that assertion pass.
-Latest uploaded binary remains historical TestFlight 1034.
+The owner subsequently explicitly requested TestFlight. **1035** now contains
+this client: [release 41368787708](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41368787708),
+source `8e4aeef`, signed app/NSE archive/export/upload passed with 372 Core/67
+guards. Apple build `ee7e8ab8-e189-46be-92cd-46b78ed2a2e3` is VALID,
+`usesNonExemptEncryption=false`, IN_BETA_TESTING, Owner Testing Auto. No
+simulator/UI tests, backend deployment or test push was performed.
+`APNS_IMAGES_BACKEND_READY=false` remains unchanged. This native release
+authorization does not imply server-deployment authority or iPhone qualification.
 
 Changed client surfaces:
 

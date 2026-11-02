@@ -26,7 +26,7 @@ Historical client source `c6f904d` was qualified by
 Native macOS authenticated MP4/AVPlayer fixtures passed; that source still gated
 all production HTTP integration. Current deployed-v1 client qualification is
 recorded in the linked HTTP handoff. No physical-device result or new TestFlight
-upload is claimed.
+upload was claimed by that qualification-only handoff.
 
 Current deployed-v1 source `0ef3b9f` passed
 [unsigned qualification 41367976945](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41367976945):
@@ -36,8 +36,9 @@ fixtures, not deployed-server or iPhone qualification.
 
 No server agent contact, server deployment/settings, DNS/router changes,
 camera activation, source/retention/detector/Coral changes or test push is part
-of this work. The latest attachment prohibits deployment from this workstream:
-this update uses tests and an unsigned generic-device build, not TestFlight.
+of this work. The attachment initially prohibited deployment from this
+workstream; the owner's later explicit "push to testflight" authorized only
+the native 1035 release recorded below. Server deployment remains out of scope.
 
 ## Live implementation retained
 
@@ -73,6 +74,17 @@ this update uses tests and an unsigned generic-device build, not TestFlight.
 Normal TLS/ATS, API cookies/write CSRF, audio/mute and fold-aware layout remain.
 Notification renewal preserves the installation's actual camera selection,
 including `camera_ids: []`, confidence policy and private photo behavior.
+
+## Current delivered binary: TestFlight 1035
+
+After an explicit owner request, source `8e4aeef` shipped in
+[release 41368787708](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41368787708):
+372 Core tests, 67 guards, signed app/NSE archive/export/upload passed.
+Apple build `ee7e8ab8-e189-46be-92cd-46b78ed2a2e3` is VALID, cleared for
+export compliance, IN_BETA_TESTING and included in Owner Testing Auto.
+This binary contains the deployed recorded HTTP-v1 client. No server changes
+or test pushes occurred; image readiness remains false and physical acceptance
+is not implied by Apple processing.
 
 ## Historical delivered binary
 
