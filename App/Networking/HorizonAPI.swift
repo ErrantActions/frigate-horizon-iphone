@@ -171,10 +171,6 @@ final class HorizonAPI {
         guard let response = response as? HTTPURLResponse else { throw HorizonError.unexpectedResponse }
         if response.statusCode == 403 { throw HorizonError.forbidden }
         if response.statusCode == 401 { throw HorizonError.unauthorized }
-        if viewerRequest && response.statusCode == 422 {
-            throw HorizonError.server(status: 422,
-                message: ViewerValidationResponse.detail(data: bytes, mimeType: response.mimeType))
-        }
         guard (200..<300).contains(response.statusCode) else { throw HorizonError.http(response.statusCode) }
         guard response.mimeType == "text/plain" else { throw HorizonError.unexpectedResponse }
         for try await line in bytes.lines {
@@ -229,6 +225,10 @@ final class HorizonAPI {
         guard let response = response as? HTTPURLResponse else { throw HorizonError.unexpectedResponse }
         if response.statusCode == 403 { throw HorizonError.forbidden }
         if response.statusCode == 401 { throw HorizonError.unauthorized }
+        if viewerRequest && response.statusCode == 422 {
+            throw HorizonError.server(status: 422,
+                message: ViewerValidationResponse.detail(data: bytes, mimeType: response.mimeType))
+        }
         guard (200..<300).contains(response.statusCode) else {
             struct ServerFailure: Decodable { let message: String?; let detail: String? }
             if response.mimeType == "application/json" {

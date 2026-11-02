@@ -179,8 +179,11 @@ class TestWebRTCViewing(unittest.TestCase):
         core = source("Sources/HorizonCore/WebRTCViewing.swift")
         parser = source("Sources/HorizonCore/ViewerValidationResponse.swift")
         peer = source("App/Media/OwnedWebRTCViewer.swift")
-        self.assertTrue("viewerRequest && response.statusCode == 422" in api)
-        self.assertTrue("ViewerValidationResponse.detail(data: bytes, mimeType: response.mimeType)" in api)
+        response = api.split("private func dataWithHTTPResponse(")[1]
+        logs = api.split("func streamLogs(")[1].split("private func dataWithHTTPResponse(")[0]
+        self.assertTrue("viewerRequest && response.statusCode == 422" in response)
+        self.assertTrue("ViewerValidationResponse.detail(data: bytes, mimeType: response.mimeType)" in response)
+        self.assertTrue("ViewerValidationResponse.detail(" not in logs)
         self.assertTrue("case .server = failure { return failure.localizedDescription }" in core)
         self.assertTrue('let loc: [Location]' in parser)
         self.assertTrue("let input:" not in parser)
