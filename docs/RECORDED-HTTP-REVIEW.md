@@ -8,13 +8,21 @@ packet clocks are repaired in `0.19.0-7def9a838805-horizon`. A version string
 does **not** authorize playback: the client requires authenticated per-camera
 discovery and the supported v1 fields.
 
+The latest handoff adds direct closed-original delivery in
+**`0.19.0-7c6782c7c729-horizon`**. The client now checks the authenticated
+generated OpenAPI request/response schemas before sending `delivery`,
+`video_codecs` or `audio_codecs`. Discovery still reports version 1 and has
+**no direct-delivery feature flag**; neither that version nor server version
+strings can safely negotiate these fields. Older contracts reject them.
+
 The published owner branch is
 [webrtc-only-media-20261101](https://github.com/ErrantActions/Frigate-Horizon/tree/webrtc-only-media-20261101),
-pinned here to **`7def9a838805a38e4f48c30ad6024bc0ca2c2145`**:
+pinned for the current direct-original work to
+**`7c6782c7c72990ec69adb00067dfe08e5457bfdc`**:
 
-- [Request models](https://github.com/ErrantActions/Frigate-Horizon/blob/7def9a838805a38e4f48c30ad6024bc0ca2c2145/frigate/api/defs/request/recorded_http_body.py)
-- [Response models](https://github.com/ErrantActions/Frigate-Horizon/blob/7def9a838805a38e4f48c30ad6024bc0ca2c2145/frigate/api/defs/response/recorded_http_response.py)
-- [Router](https://github.com/ErrantActions/Frigate-Horizon/blob/7def9a838805a38e4f48c30ad6024bc0ca2c2145/frigate/api/recorded_http.py)
+- [Request models](https://github.com/ErrantActions/Frigate-Horizon/blob/7c6782c7c72990ec69adb00067dfe08e5457bfdc/frigate/api/defs/request/recorded_http_body.py)
+- [Response models](https://github.com/ErrantActions/Frigate-Horizon/blob/7c6782c7c72990ec69adb00067dfe08e5457bfdc/frigate/api/defs/response/recorded_http_response.py)
+- [Router](https://github.com/ErrantActions/Frigate-Horizon/blob/7c6782c7c72990ec69adb00067dfe08e5457bfdc/frigate/api/recorded_http.py)
 
 A local isolated FastAPI 0.143/Pydantic 2.14 fixture generated OpenAPI from
 those published router/model definitions and validated seven operations,
@@ -42,8 +50,13 @@ no HLS fallback and recognized advertised qualities. Returned `session_url`
 and `resolve_url` must match that camera's published API scope. Discovery
 does not create or probe a recording pipeline.
 
-- POST the returned session URL with exactly version/after/before/
+- POST the returned session URL with version/after/before/
   start_timestamp/quality/`start_policy: next`; accept **202 preparing**.
+  On the OpenAPI-confirmed new contract, Auto/Original add `delivery: auto`
+  and confirmed native H264/AAC/MP3 decoder lists. Explicit scaled qualities/
+  Data Saver use `delivery: prepared`. HEVC is not advertised without actual
+  profile evidence. Older or inaccessible metadata leaves all new fields
+  omitted, with an explicit compatibility notice for inaccessible metadata.
 - Poll only returned owned status URLs, bounded by time/attempts/hard expiry.
   Validate immutable after/before/requested start/next anchor and exact owned
   camera/UUID status, close and media URLs.
@@ -53,7 +66,9 @@ does not create or probe a recording pipeline.
 - Empty has no playable asset. Its session is closed before a bounded resolver/
   replacement. No HEAD/range/native decoder is started for empty/preparing.
 - `next_timestamp == before` is the continuation anchor, not a rounded last
-  span endpoint. This avoids rediscovering a fractional tail at hour cutoffs.
+  span endpoint. For direct originals, before/next clip to the selected file's
+  playable end; only prepared windows must equal requested before. A direct
+  clipped interval can be shorter than the creation request's minimum duration.
 - Resolver POST contains version/after/before/start_timestamp, **no quality**,
   at most 3600 seconds and target strictly before before. Effective timestamps
   are validated against the requested bounds. Null/exhausted is missing
@@ -73,7 +88,10 @@ or an original download URL as their fallback.
 
 Ready media gets authenticated HEAD validation for stable length, MIME,
 byte-range support and a strong ETag. Small authenticated range reads verify
-faststart `ftyp`/`moov` before `mdat`; a second HEAD confirms length/ETag.
+`ftyp` and a valid bounded `moov` box; prepared windows require faststart,
+while `original_file` can retain the original tail index after `mdat`.
+Box-header offsets skip media bytes; there is no packet scan, copying,
+remuxing or encoding in the native direct path. A second HEAD confirms length/ETag.
 Ready atomic completion is a verified property of the pinned server contract,
 not an invented `ready`/growing-file assumption.
 
@@ -90,7 +108,8 @@ click. An upcoming continuation normally requests **20 seconds or less**.
 Only one upcoming owned window may prepare while the current native viewer
 is visible (including explicit visible PiP), actually playing and approaching
 its boundary. Lead time scales measured preparation time to the next window
-duration plus a two-second margin and native playback rate.
+duration plus a two-second margin and native playback rate for derivatives.
+Direct-original lead uses measured readiness without scaling by request duration.
 
 No upcoming AVPlayer/asset/video output is created: only preparation/status/
 small header verification occurs until handoff. Additional admission failure
@@ -114,6 +133,10 @@ downloads/exports remain.
 
 Diagnostics include window preparation, native readiness, video-output decoded
 frame and seek-to-decoded-frame times, access-log drops/stalls/error codes.
+Delivery mode and explicit `preparation_reason` are surfaced without resolution
+badges. Live diagnostics expose confirmed create HTTP 201, answer HTTP 204 and
+successful heartbeat counts; the latest live repair remains in source and
+heartbeat PATCH has no invented body.
 Missing values are not observed. Private URLs, original paths and credentials
 are not logged; decoded output is not claimed to be first displayed video.
 
@@ -196,6 +219,10 @@ downloads/exports, server settings/deployment and DNS/router/provider settings
 were not changed; no test notifications were sent.
 
 ## Required remaining acceptance
+
+The direct-original work is qualification-only until the native build/tests
+complete; its final results are recorded below. Historical 0ef3b9f/1035 results
+above do not qualify the new direct-original client.
 
 On a real iPhone with the deployed server: authenticated MP4 HEAD/ranges and
 206/416, cold/warm tap-to-frame and seek latency, repeated in-window seeks,

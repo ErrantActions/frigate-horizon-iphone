@@ -34,6 +34,14 @@ Current deployed-v1 source `0ef3b9f` passed
 Native authenticated HEAD/range/faststart/AVPlayer tests are isolated macOS
 fixtures, not deployed-server or iPhone qualification.
 
+Latest source adds the published `7c6782c7c729` direct-original contract behind
+authenticated OpenAPI field negotiation (discovery v1 itself is unchanged).
+Auto/Original prefer a compatible original file; scaled/Data Saver remain
+prepared. Tail-indexed closed originals retain their bytes/index and clipped
+canonical boundary. Live five-field 422 repair is preserved; diagnostics
+distinguish 201/204, heartbeat successes, schema 422 and CSRF 403. No physical
+iPhone result, backend/router mutation or native deployment is claimed.
+
 No server agent contact, server deployment/settings, DNS/router changes,
 camera activation, source/retention/detector/Coral changes or test push is part
 of this work. The attachment initially prohibited deployment from this

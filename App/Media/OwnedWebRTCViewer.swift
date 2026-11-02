@@ -72,6 +72,9 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
     @Published private(set) var advertisedHeights: [Int] = []
     @Published private(set) var videoTrack: RTCVideoTrack?
     @Published private(set) var metrics = ""
+    private var creationHTTPStatus: Int?
+    private var answerHTTPStatus: Int?
+    private var successfulHeartbeats = 0
     @Published private(set) var qualityUpdating = false
     private(set) var lastFailure: Error?
     private(set) var frameObserver = RTCViewerFrameObserver()
@@ -139,6 +142,7 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
         startUptime = ProcessInfo.processInfo.systemUptime
         firstFrame = nil
         metrics = ""
+        creationHTTPStatus = nil; answerHTTPStatus = nil; successfulHeartbeats = 0
         let token = generation
         observeFrames(token: token)
         status = String(localized: "viewer.discovering", defaultValue: "Checking WebRTC viewing support")
@@ -172,7 +176,10 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
                 let creation = Task { try await api.viewerRequest(url, method: "POST",
                     body: JSONEncoder().encode(body), success: [201]) }
                 let created: Data
-                do { created = try await creation.value }
+                do {
+                    created = try await creation.value
+                    if self.generation == token { self.creationHTTPStatus = 201 }
+                }
                 catch {
                     if (error as? HorizonError)?.httpStatusCode == nil {
                         ViewerCleanupStore.shared.unidentifiedCreation()
@@ -251,6 +258,7 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
         _ = try await owner.api.viewerRequest(owner.policy.owned(owner.id, operation: "answer"), method: "POST",
             body: JSONEncoder().encode(ViewerSDP(type: "answer", sdp: answer.sdp)), success: [204])
         try check(token)
+        answerHTTPStatus = 204
         candidateQueue.acceptAnswer()
         flushCandidates(token: token)
         attachTracks(peer)
@@ -294,11 +302,11 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
                 do { try await Task.sleep(for: .seconds(self.lease.interval)) } catch { return }
                 guard self.generation == token, let owner = self.owner else { return }
                 do {
-                    let data = try await owner.api.viewerRequest(owner.policy.owned(owner.id), method: "PATCH",
-                        body: Data("{}".utf8))
+                    let data = try await owner.api.viewerRequest(owner.policy.owned(owner.id), method: "PATCH")
                     let update = try JSONDecoder().decode(ViewerHeartbeat.self, from: data)
                     try self.check(token)
                     try self.lease.renew(update, now: Date().timeIntervalSince1970)
+                    self.successfulHeartbeats += 1
                     if let servers = update.iceServers, let config = self.rtcConfiguration {
                         for server in servers { try ViewerSessionDescription.validateICE(server) }
                         config.iceServers = servers.map {
@@ -390,7 +398,7 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
         let decoded = inbound?.values["framesDecoded"] as? NSNumber
         let dropped = inbound?.values["framesDropped"] as? NSNumber
         let first = firstFrame.map { String(format: "%.3f s", $0) } ?? "not observed"
-        metrics = "Protocol: WebRTC\nFirst decoded frame: \(first)\nDecoded: \(decoded?.stringValue ?? "not observed")\nDropped: \(dropped?.stringValue ?? "not observed")\n" +
+        metrics = "Protocol: WebRTC\nCreate HTTP: \(creationHTTPStatus.map(String.init) ?? "not observed")\nAnswer HTTP: \(answerHTTPStatus.map(String.init) ?? "not observed")\nSuccessful heartbeats: \(successfulHeartbeats)\nFirst decoded frame: \(first)\nDecoded: \(decoded?.stringValue ?? "not observed")\nDropped: \(dropped?.stringValue ?? "not observed")\n" +
             "Decoded size: \(resolution.map { "\(Int($0.width))x\(Int($0.height))" } ?? "not observed")\n" +
             "Candidate: \(safe("candidateType", allowed: ["host","srflx","prflx","relay"]))\n" +
             "Protocol: \(safe("protocol", allowed: ["udp","tcp"]))\nRelay protocol: \(safe("relayProtocol", allowed: ["udp","tcp","tls"]))"

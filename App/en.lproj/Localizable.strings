@@ -13,6 +13,12 @@
 "viewer.payload" = "HTTP 422: The live viewing request failed validation. Response details are unavailable. Update the app/server contract.";
 "viewer.validationUnavailable" = "The server returned HTTP 422, but its validation detail could not be read. Check the app/server request contract.";
 "viewer.validationRedacted" = "Sensitive validation content was redacted.";
+"review.deliveryDiscoveryUnavailable" = "Direct-original contract discovery is unavailable. Prepared-only compatibility is active; no new delivery fields will be sent.";
+"review.codecDiscoveryFailed" = "Native H264 decoder support could not be confirmed. No direct-original codec claim was sent.";
+"review.preparedVideoCodec" = "A prepared viewing derivative is being used because the original video codec is unsupported.";
+"review.preparedAudioCodec" = "A prepared viewing derivative is being used because the original audio codec is unsupported.";
+"review.preparedIndex" = "A prepared viewing derivative is being used because the original has no usable MP4 index.";
+"review.preparedReason" = "The server explicitly prepared a compatible viewing derivative.";
 "viewer.capacity" = "The server's shared viewing/encoder capacity is in use. Close another viewer before retrying.";
 "viewer.cleanup" = "Local playback stopped, but owned viewer deletion is unconfirmed. Its lease is only a safeguard; retry cleanup before assuming server work ended.";
 "viewer.unknownCreation" = "Viewer creation has no confirmed session identity. Cleanup cannot be confirmed; no creation replay was attempted.";

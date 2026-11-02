@@ -58,20 +58,23 @@ public protocol RecordedHTTPControlClient: Sendable {
     var address: ServerAddress { get }
     var cookies: [HTTPCookie] { get }
     var mediaConfiguration: URLSessionConfiguration { get }
+    var decoderCapabilities: RecordedHTTPDecoderCapabilities { get }
     func request(_ url: URL, method: String, body: Data?, success: Set<Int>) async throws -> RecordedHTTPControlResponse
 }
 
 public extension RecordedHTTPControlClient {
     var mediaConfiguration: URLSessionConfiguration { .ephemeral }
+    var decoderCapabilities: RecordedHTTPDecoderCapabilities { .baseline }
 }
 
 public actor RecordedHTTPAPITransport: RecordedHTTPTransport {
     // Compile-time protocol qualification is separate from per-camera authenticated discovery.
-    public nonisolated let qualification: RecordedHTTPQualification = .finalized(contractID: "recorded-http-v1@7def9a8")
+    public nonisolated let qualification: RecordedHTTPQualification = .finalized(contractID: "recorded-http-v1@7c6782c")
     public nonisolated let address: ServerAddress
     private let client: any RecordedHTTPControlClient
     private let policy: RecordedHTTPResourcePolicy
     private var discoveries: [String: RecordedHTTPCapability] = [:]
+    private var deliveryContract: RecordedHTTPDeliveryContract?
     public init(client: any RecordedHTTPControlClient) throws {
         self.client=client; address=client.address
         policy=try RecordedHTTPResourcePolicy(address: client.address)
@@ -96,12 +99,24 @@ public actor RecordedHTTPAPITransport: RecordedHTTPTransport {
     }
     public func discover(camera: String) async throws -> RecordedHTTPCapability {
         let response = try await client.request(endpoint(camera: camera, tail: ["status"]), method: "GET", body: nil, success: [200])
-        let caps = try JSONDecoder().decode(RecordedHTTPCapability.self, from: response.data)
+        var caps = try JSONDecoder().decode(RecordedHTTPCapability.self, from: response.data)
         guard caps.enabled && caps.available else { throw RecordedHTTPError.unavailable }
         try caps.validate()
         guard caps.maxWindowSeconds == 30, let session = caps.sessionURL, let resolve = caps.resolveURL,
               try policy.resolve(session) == endpoint(camera: camera, tail: ["sessions"]),
               try policy.resolve(resolve) == endpoint(camera: camera, tail: ["resolve"]) else { throw RecordedHTTPError.invalidContract }
+        if let deliveryContract { caps.deliveryContract = deliveryContract }
+        else {
+            do {
+                let url = try policy.validate(address.endpoint(["api","openapi.json"]))
+                let metadata = try await client.request(url, method: "GET", body: nil, success: [200])
+                caps.deliveryContract = try RecordedHTTPDeliveryContract.inspect(openAPI: metadata.data)
+            } catch {
+                guard let code = (error as? HorizonError)?.httpStatusCode, [403,404,405,501].contains(code) else { throw error }
+                caps.deliveryContract = .metadataUnavailable(code)
+            }
+            deliveryContract = caps.deliveryContract
+        }
         discoveries[camera]=caps
         return caps
     }
@@ -122,8 +137,9 @@ public actor RecordedHTTPAPITransport: RecordedHTTPTransport {
         let caps = try await discovery(camera: selection.camera)
         guard caps.qualities.contains(request.quality), request.before - request.after <= caps.maxWindowSeconds,
               let returned = caps.sessionURL else { throw RecordedHTTPError.invalidContract }
+        let negotiated = try request.negotiating(contract: caps.deliveryContract, decoders: client.decoderCapabilities)
         let response = try await client.request(policy.resolve(returned), method: "POST",
-            body: JSONEncoder().encode(request), success: [202])
+            body: JSONEncoder().encode(negotiated), success: [202])
         struct Identity: Decodable { let session_id: String; let camera: String }
         let identity = try JSONDecoder().decode(Identity.self, from: response.data)
         guard identity.camera == selection.camera, UUID(uuidString: identity.session_id) != nil else {
@@ -131,7 +147,8 @@ public actor RecordedHTTPAPITransport: RecordedHTTPTransport {
         }
         do {
             let window = try validate(JSONDecoder().decode(RecordedHTTPWindow.self, from: response.data))
-            guard window.after == request.after, window.before == request.before, window.startTimestamp == request.startTimestamp else {
+            try window.validate(request: request)
+            guard window.delivery != .originalFile || caps.deliveryContract.supportsDirectOriginal else {
                 throw RecordedHTTPError.invalidContract
             }
             return window
@@ -145,9 +162,14 @@ public actor RecordedHTTPAPITransport: RecordedHTTPTransport {
         let owned = try validate(window)
         let response = try await client.request(owned.statusURL, method: "GET", body: nil, success: [200])
         let next = try validate(JSONDecoder().decode(RecordedHTTPWindow.self, from: response.data))
+        let originalTransition = window.state != .ready && next.state == .ready && next.delivery == .originalFile
         guard next.sessionID == window.sessionID, next.camera == window.camera, next.after == window.after,
-              next.before == window.before, next.startTimestamp == window.startTimestamp,
-              next.nextTimestamp == window.nextTimestamp else { throw RecordedHTTPError.invalidContract }
+              next.startTimestamp == window.startTimestamp,
+              originalTransition ? next.before <= window.before : next.before == window.before,
+              originalTransition || next.nextTimestamp == window.nextTimestamp else { throw RecordedHTTPError.invalidContract }
+        if next.delivery == .originalFile {
+            guard try await discovery(camera: window.camera).deliveryContract.supportsDirectOriginal else { throw RecordedHTTPError.invalidContract }
+        }
         return next
     }
     public func resolve(camera: String, request: RecordedHTTPResolveRequest) async throws -> RecordedHTTPResolution {
@@ -172,12 +194,12 @@ public actor RecordedHTTPAPITransport: RecordedHTTPTransport {
         let reader = try AuthenticatedRecordedMP4Reader(mediaURL: url, verificationLength: length,
             policy: policy, cookies: client.cookies, configuration: client.mediaConfiguration)
         defer { reader.close() }
-        try await RecordedMP4Faststart.verify(reader: reader)
+        let fastStart = try await RecordedMP4Faststart.verifyIndex(reader: reader, allowTail: owned.delivery == .originalFile)
         let confirmed = try await client.request(url, method: "HEAD", body: nil, success: [200])
         guard confirmed.headers["content-length"] == lengthText, confirmed.headers["etag"] == etag else {
             throw RecordedHTTPError.rangeUnsupported
         }
-        return RecordedHTTPMediaInfo(length: length, complete: true, immutable: true, fastStart: true, rangeSupported: true)
+        return RecordedHTTPMediaInfo(length: length, complete: true, immutable: true, fastStart: fastStart, rangeSupported: true, indexed: true)
     }
     private func closeURL(_ url: URL) async throws {
         do { _ = try await client.request(url, method: "DELETE", body: nil, success: [204]) }
@@ -194,8 +216,12 @@ public actor RecordedHTTPAPITransport: RecordedHTTPTransport {
 
 public enum RecordedMP4Faststart {
     public static func verify(reader: AuthenticatedRecordedMP4Reader) async throws {
+        _ = try await verifyIndex(reader: reader, allowTail: false)
+    }
+    public static func verifyIndex(reader: AuthenticatedRecordedMP4Reader, allowTail: Bool) async throws -> Bool {
         var offset: Int64 = 0
         var foundType = false
+        var foundMedia = false
         for _ in 0..<32 {
             guard offset <= reader.length - 8 else { throw RecordedHTTPError.rangeUnsupported }
             let header = try await reader.read(RecordedMP4Range(offset: offset, count: Int(min(16, reader.length - offset))))
@@ -211,9 +237,12 @@ public enum RecordedMP4Faststart {
             if type == "ftyp" { foundType = true }
             if type == "moov" {
                 guard foundType else { throw RecordedHTTPError.rangeUnsupported }
-                return
+                return !foundMedia
             }
-            guard type != "mdat" else { throw RecordedHTTPError.rangeUnsupported }
+            if type == "mdat" {
+                guard allowTail else { throw RecordedHTTPError.rangeUnsupported }
+                foundMedia = true
+            }
             offset += Int64(size)
         }
         throw RecordedHTTPError.rangeUnsupported

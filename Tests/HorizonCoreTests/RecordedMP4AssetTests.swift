@@ -176,6 +176,56 @@ final class RecordedMP4AssetTests: XCTestCase {
         })
     }
     @MainActor
+    func testClosedOriginalTailIndexDecodesAndSeeksWithoutFaststartOrNewItem() async throws {
+        let body = try await makeVideoFixture(faststart: false)
+        let client = MP4HeadFixtureClient(cookies: [try XCTUnwrap(HTTPCookie(properties: [
+            .domain:"fixture.invalid",.path:"/proxy/api",.name:"session",.value:"fixture-only",.secure:"TRUE"]))], length: body.count)
+        let id = UUID().uuidString.lowercased()
+        let url = client.address.endpoint(["api","front","recordings","http","sessions",id])
+        let media = MP4FixtureProtocol.install(body, at: url.appendingPathComponent("media.mp4"))
+        defer { MP4FixtureProtocol.remove(media) }
+        let window = RecordedHTTPWindow(sessionID: id, camera: "front", state: .ready, quality: .original, audio: false,
+            statusURL: url, closeURL: url, mediaURL: media, hardExpiresAt: Date().timeIntervalSince1970 + 60,
+            timeline: [.init(sourceStart: 100, sourceEnd: 101, mediaStart: 0, mediaEnd: 1)],
+            after: 100, before: 101, startTimestamp: 100.2, effectiveStartTimestamp: 100.2,
+            nextTimestamp: 101, delivery: .originalFile)
+        let transport = try RecordedHTTPAPITransport(client: client)
+        let info = try await transport.mediaInfo(window: window)
+        XCTAssertFalse(info.fastStart); XCTAssertTrue(info.indexed)
+        let reader = try AuthenticatedRecordedMP4Reader(mediaURL: media, info: info,
+            policy: RecordedHTTPResourcePolicy(address: client.address), cookies: client.cookies,
+            configuration: client.mediaConfiguration)
+        let resource = try RecordedMP4Asset(reader: reader)
+        let item = AVPlayerItem(asset: resource.asset)
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: nil); item.add(output)
+        let player = AVPlayer(playerItem: item)
+        defer { player.pause(); player.replaceCurrentItem(with: nil); resource.cancel() }
+        player.playImmediately(atRate: 1)
+        func decoded() async throws -> Bool {
+            for _ in 0..<200 {
+                let time = player.currentTime()
+                if output.hasNewPixelBuffer(forItemTime: time), output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) != nil { return true }
+                if item.status == .failed { throw item.error ?? RecordedHTTPError.preparationFailed }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            return false
+        }
+        let first = try await decoded(); XCTAssertTrue(first)
+        for seconds in [0.2,0.6] {
+            player.pause()
+            let finished = await withCheckedContinuation { continuation in
+                player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) {
+                    continuation.resume(returning: $0)
+                }
+            }
+            XCTAssertTrue(finished); player.playImmediately(atRate: 1)
+            let frame = try await decoded(); XCTAssertTrue(frame); XCTAssertTrue(player.currentItem === item)
+        }
+        XCTAssertTrue(MP4FixtureProtocol.requests(for: media).allSatisfy {
+            $0.value(forHTTPHeaderField: "Cookie")?.contains("session=fixture-only") == true
+        })
+    }
+    @MainActor
     func testNativeAVPlayerDecodesAndSeeksFixtureWithoutReplacingItsItem() async throws {
         let body = try await makeVideoFixture()
         let url = MP4FixtureProtocol.install(body)
@@ -217,11 +267,11 @@ final class RecordedMP4AssetTests: XCTestCase {
             $0.value(forHTTPHeaderField: "Cookie")?.contains("session=fixture-only") == true
         })
     }
-    private func makeVideoFixture() async throws -> Data {
+    private func makeVideoFixture(faststart: Bool = true) async throws -> Data {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
         defer { try? FileManager.default.removeItem(at: url) }
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
-        writer.shouldOptimizeForNetworkUse = true
+        writer.shouldOptimizeForNetworkUse = faststart
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 64, AVVideoHeightKey: 64])
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [

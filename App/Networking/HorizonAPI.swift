@@ -223,7 +223,15 @@ final class HorizonAPI {
                                       distinguishCameraDenial: Bool = false, viewerRequest: Bool = false) async throws -> (data: Data, response: HTTPURLResponse) {
         let (bytes, response) = try await session.data(for: request, delegate: viewerRequest ? ViewerTaskDelegate() : nil)
         guard let response = response as? HTTPURLResponse else { throw HorizonError.unexpectedResponse }
-        if response.statusCode == 403 { throw HorizonError.forbidden }
+        if response.statusCode == 403 {
+            if viewerRequest {
+                let detail = ViewerValidationResponse.detail(data: bytes, mimeType: response.mimeType)
+                if detail.lowercased().contains("csrf") {
+                    throw HorizonError.server(status: 403, message: detail)
+                }
+            }
+            throw HorizonError.forbidden
+        }
         if response.statusCode == 401 { throw HorizonError.unauthorized }
         if viewerRequest && response.statusCode == 422 {
             throw HorizonError.server(status: 422,

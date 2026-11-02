@@ -79,6 +79,7 @@ final class RecordingPlayer: ObservableObject {
                 } else { bounds = try await transport.sourceRange(selection: selection) }
                 guard generation == token, !Task.isCancelled else { return }
                 capabilities = caps; self.sourceRange = bounds
+                notice = caps.deliveryContract.notice
                 let pending = pendingSeek; pendingSeek = nil
                 replace(at: pending?.timestamp ?? startTimestamp ?? bounds.lowerBound,
                     autoplay: pending?.playing ?? wantsToPlay, startedAt: intentStart)
@@ -175,6 +176,16 @@ final class RecordingPlayer: ObservableObject {
         if effective > ready.request.startTimestamp {
             notice = String(localized: "review.nextFrame", defaultValue: "Playback advanced to the next actual recorded frame.")
         }
+        if let reason = ready.window.preparationReason {
+            let explanation: String
+            switch reason {
+            case "source_video_codec_unsupported": explanation = String(localized: "review.preparedVideoCodec", defaultValue: "A prepared viewing derivative is being used because the original video codec is unsupported.")
+            case "source_audio_codec_unsupported": explanation = String(localized: "review.preparedAudioCodec", defaultValue: "A prepared viewing derivative is being used because the original audio codec is unsupported.")
+            case "source_requires_mp4_index": explanation = String(localized: "review.preparedIndex", defaultValue: "A prepared viewing derivative is being used because the original has no usable MP4 index.")
+            default: explanation = String(localized: "review.preparedReason", defaultValue: "The server explicitly prepared a compatible viewing derivative.")
+            }
+            notice = explanation
+        }
         let reader = try AuthenticatedRecordedMP4Reader(mediaURL: url, info: ready.info,
             policy: RecordedHTTPResourcePolicy(address: api.address), cookies: api.cookies)
         let asset = try RecordedMP4Asset(reader: reader) { [weak self] failure in
@@ -189,6 +200,7 @@ final class RecordingPlayer: ObservableObject {
         let videoOutput = AVPlayerItemVideoOutput(pixelBufferAttributes: nil)
         item.add(videoOutput); output = videoOutput
         metrics.preparationSeconds = ready.preparationSeconds
+        metrics.delivery = ready.window.delivery?.rawValue ?? "prepared (legacy)"
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try AVAudioSession.sharedInstance().setActive(true)
         player.replaceCurrentItem(with: item)
@@ -270,7 +282,8 @@ final class RecordingPlayer: ObservableObject {
         do {
             let lead = try RecordedHTTPContinuationPolicy.leadSeconds(preparationSeconds: ready.preparationSeconds,
                 windowSeconds: ready.request.before - ready.request.after,
-                nextWindowSeconds: min(20, caps.maxWindowSeconds), playbackRate: Double(requestedRate))
+                nextWindowSeconds: min(20, caps.maxWindowSeconds), playbackRate: Double(requestedRate),
+                originalFile: ready.window.delivery == .originalFile)
             if runEnd - time <= lead { beginUpcoming(ready) }
         } catch { notice = error.localizedDescription }
     }
@@ -472,10 +485,11 @@ struct RecordedPlaybackMetrics {
     var droppedFrames: Int?
     var errorCodes: [Int] = []
     var preparationSeconds: Double?
+    var delivery = "not observed"
     var report: String {
         let absent = String(localized: "review.notObserved", defaultValue: "not observed")
         func seconds(_ value: Double?) -> String { value.map { String(format: "%.3f s", $0) } ?? absent }
-        return "windowPreparation: \(seconds(preparationSeconds))\nplayerReady: \(seconds(readySeconds))\nfirstDecodedFrame: \(seconds(firstDecodedSeconds))\nseekDecodedFrame: \(seconds(seekDecodedSeconds))\nstalls: \(stalls)\ndroppedFrames: \(droppedFrames.map(String.init) ?? absent)\nAVPlayer error codes: \(errorCodes)\n" + String(localized: "review.metricBasis", defaultValue: "Startup times begin at the recorded window intent; seeks begin at native seek dispatch. Decoded video-output frames are measured, not display or device certification.")
+        return "delivery: \(delivery)\nwindowPreparation: \(seconds(preparationSeconds))\nplayerReady: \(seconds(readySeconds))\nfirstDecodedFrame: \(seconds(firstDecodedSeconds))\nseekDecodedFrame: \(seconds(seekDecodedSeconds))\nstalls: \(stalls)\ndroppedFrames: \(droppedFrames.map(String.init) ?? absent)\nAVPlayer error codes: \(errorCodes)\n" + String(localized: "review.metricBasis", defaultValue: "Startup times begin at the recorded window intent; seeks begin at native seek dispatch. Decoded video-output frames are measured, not display or device certification.")
     }
 }
 

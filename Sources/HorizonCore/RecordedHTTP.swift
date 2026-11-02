@@ -51,6 +51,7 @@ public struct RecordedHTTPCapability: Codable, Sendable {
     public let sessionURL: String?
     public let resolveURL: String?
     public let reason: String?
+    public var deliveryContract: RecordedHTTPDeliveryContract = .preparedLegacy
     enum CodingKeys: String, CodingKey {
         case version, enabled, available, transport, seek, qualities
         case maxWindowSeconds = "max_window_seconds", originalsUnchanged = "original_recordings_unchanged"
@@ -144,15 +145,40 @@ public struct RecordedHTTPWindowRequest: Encodable, Equatable, Sendable {
     public let startTimestamp: Double
     public let quality: RecordedHTTPQuality
     public let startPolicy = "next"
+    public let deliveryRequest: RecordedHTTPDeliveryRequest?
     enum CodingKeys: String, CodingKey {
         case version, after, before, quality
         case startTimestamp = "start_timestamp", startPolicy = "start_policy"
+        case delivery, videoCodecs = "video_codecs", audioCodecs = "audio_codecs"
     }
-    public init(after: Double, before: Double, startTimestamp: Double, quality: RecordedHTTPQuality, maximum: Double = 30) throws {
+    public init(after: Double, before: Double, startTimestamp: Double, quality: RecordedHTTPQuality, maximum: Double = 30,
+                deliveryRequest: RecordedHTTPDeliveryRequest? = nil) throws {
         guard [after,before,startTimestamp,maximum].allSatisfy(\.isFinite), after >= 0,
               (0.1...30).contains(before - after), before - after <= maximum,
               startTimestamp >= after, startTimestamp < before else { throw RecordedHTTPError.invalidWindow }
         self.after = after; self.before = before; self.startTimestamp = startTimestamp; self.quality = quality
+        self.deliveryRequest = deliveryRequest
+    }
+    public func encode(to encoder: Encoder) throws {
+        var fields = encoder.container(keyedBy: CodingKeys.self)
+        try fields.encode(version, forKey: .version)
+        try fields.encode(after, forKey: .after); try fields.encode(before, forKey: .before)
+        try fields.encode(startTimestamp, forKey: .startTimestamp); try fields.encode(startPolicy, forKey: .startPolicy)
+        try fields.encode(quality, forKey: .quality)
+        if let deliveryRequest {
+            try fields.encode(deliveryRequest.delivery, forKey: .delivery)
+            try fields.encode(deliveryRequest.decoders.video, forKey: .videoCodecs)
+            try fields.encode(deliveryRequest.decoders.audio, forKey: .audioCodecs)
+        }
+    }
+    public func negotiating(contract: RecordedHTTPDeliveryContract, decoders: RecordedHTTPDecoderCapabilities) throws -> Self {
+        guard contract.supportsDirectOriginal else {
+            guard deliveryRequest?.delivery != .direct else { throw RecordedHTTPError.unsupportedSource }
+            return try Self(after: after, before: before, startTimestamp: startTimestamp, quality: quality)
+        }
+        let mode: RecordedHTTPRequestedDelivery = deliveryRequest?.delivery ?? (quality.height == nil ? .auto : .prepared)
+        return try Self(after: after, before: before, startTimestamp: startTimestamp, quality: quality,
+            deliveryRequest: RecordedHTTPDeliveryRequest(delivery: mode, decoders: decoders))
     }
     public static func bounded(sourceRange: ClosedRange<Double>, at source: Double, maximum: Double,
                                quality: RecordedHTTPQuality, duration: Double = 10) throws -> Self {
@@ -191,27 +217,33 @@ public struct RecordedHTTPWindow: Codable, Sendable {
     public let effectiveStartTimestamp: Double?
     public let nextTimestamp: Double
     public let error: String?
+    public let delivery: RecordedHTTPActualDelivery?
+    public let preparationReason: String?
     enum CodingKeys: String, CodingKey {
         case version,camera,state,quality,audio,timeline,width,height,after,before,error
         case sessionID = "session_id", statusURL = "status_url", closeURL = "close_url", mediaURL = "media_url"
         case hardExpiresAt = "hard_expires_at"
         case startTimestamp = "start_timestamp", effectiveStartTimestamp = "effective_start_timestamp", nextTimestamp = "next_timestamp"
+        case delivery, preparationReason = "preparation_reason"
     }
     public init(sessionID: String, camera: String, state: State, quality: RecordedHTTPQuality, audio: Bool,
                 statusURL: URL, closeURL: URL, mediaURL: URL?, hardExpiresAt: Double, timeline: [RecordedHTTPSpan],
                 after: Double, before: Double, startTimestamp: Double, effectiveStartTimestamp: Double?,
-                nextTimestamp: Double, width: Int? = nil, height: Int? = nil, error: String? = nil) {
+                nextTimestamp: Double, width: Int? = nil, height: Int? = nil, error: String? = nil,
+                delivery: RecordedHTTPActualDelivery? = nil, preparationReason: String? = nil) {
         version = 1
         self.sessionID=sessionID; self.camera=camera; self.state=state; self.quality=quality; self.audio=audio
         self.statusURL=statusURL; self.closeURL=closeURL; self.mediaURL=mediaURL; self.hardExpiresAt=hardExpiresAt
         self.timeline=timeline; self.width=width; self.height=height
         self.after=after; self.before=before; self.startTimestamp=startTimestamp
         self.effectiveStartTimestamp=effectiveStartTimestamp; self.nextTimestamp=nextTimestamp; self.error=error
+        self.delivery=delivery; self.preparationReason=preparationReason
     }
     public func validate(policy: RecordedHTTPResourcePolicy, camera: String, now: Double) throws {
         guard version == 1, self.camera == camera, NativeNotificationRoute.isValidIdentifier(sessionID),
               [after,before,startTimestamp,nextTimestamp].allSatisfy(\.isFinite),
-              after >= 0, (0.1...30).contains(before - after), startTimestamp >= after,
+              after >= 0, before > after, before - after <= 30,
+              delivery == .originalFile || before - after >= 0.1, startTimestamp >= after,
               startTimestamp < before, nextTimestamp == before else { throw RecordedHTTPError.invalidWindow }
         guard hardExpiresAt.isFinite, hardExpiresAt > now else { throw RecordedHTTPError.expired }
         _ = try policy.validate(statusURL); _ = try policy.validate(closeURL)
@@ -236,7 +268,11 @@ public struct RecordedHTTPWindow: Codable, Sendable {
             mediaURL: try mediaURL.map { try policy.resolve($0.relativeString) }, hardExpiresAt: hardExpiresAt,
             timeline: timeline, after: after, before: before, startTimestamp: startTimestamp,
             effectiveStartTimestamp: effectiveStartTimestamp, nextTimestamp: nextTimestamp,
-            width: width, height: height, error: error)
+            width: width, height: height, error: error, delivery: delivery, preparationReason: preparationReason)
+    }
+    public func validate(request: RecordedHTTPWindowRequest) throws {
+        guard after == request.after, startTimestamp == request.startTimestamp, before <= request.before,
+              delivery == .originalFile || before == request.before else { throw RecordedHTTPError.invalidWindow }
     }
 }
 
@@ -246,11 +282,13 @@ public struct RecordedHTTPMediaInfo: Sendable {
     public let immutable: Bool
     public let fastStart: Bool
     public let rangeSupported: Bool
-    public init(length: Int64, complete: Bool, immutable: Bool, fastStart: Bool, rangeSupported: Bool) {
+    public let indexed: Bool
+    public init(length: Int64, complete: Bool, immutable: Bool, fastStart: Bool, rangeSupported: Bool, indexed: Bool = false) {
         self.length=length; self.complete=complete; self.immutable=immutable; self.fastStart=fastStart; self.rangeSupported=rangeSupported
+        self.indexed = indexed
     }
     public func validate() throws {
-        guard length > 0, complete, immutable, fastStart, rangeSupported else { throw RecordedHTTPError.rangeUnsupported }
+        guard length > 0, complete, immutable, fastStart || indexed, rangeSupported else { throw RecordedHTTPError.rangeUnsupported }
     }
 }
 
@@ -322,7 +360,7 @@ public struct PreparedRecordedHTTPWindow: Sendable {
     public let preparationSeconds: Double
     public func seekDecision(at source: Double) -> RecordedHTTPSeekDecision {
         if let time = mapping.mediaTime(for: source) { return .native(mediaTime: time) }
-        if !source.isFinite || (source >= request.after && source < request.before) { return .gap }
+        if !source.isFinite || (source >= window.after && source < window.before) { return .gap }
         return .replacement
     }
 }
@@ -333,12 +371,12 @@ public enum RecordedHTTPSeekDecision: Equatable, Sendable {
 
 public enum RecordedHTTPContinuationPolicy {
     public static func leadSeconds(preparationSeconds: Double, windowSeconds: Double,
-                                   nextWindowSeconds: Double, playbackRate: Double) throws -> Double {
+                                   nextWindowSeconds: Double, playbackRate: Double, originalFile: Bool = false) throws -> Double {
         guard [preparationSeconds,windowSeconds,nextWindowSeconds,playbackRate].allSatisfy(\.isFinite),
               preparationSeconds >= 0, windowSeconds > 0, nextWindowSeconds > 0, playbackRate > 0 else {
             throw RecordedHTTPError.invalidWindow
         }
-        return (preparationSeconds * nextWindowSeconds / windowSeconds + 2) * playbackRate
+        return (preparationSeconds * (originalFile ? 1 : nextWindowSeconds / windowSeconds) + 2) * playbackRate
     }
 }
 
@@ -403,20 +441,22 @@ public actor RecordedHTTPWindowManager {
                     try await Task.sleep(for: .seconds(min(1, 0.1 * Double(attempt + 1))))
                     let next = try await transport.status(window: window).resolved(policy: policy)
                     guard next.sessionID == window.sessionID, next.closeURL == window.closeURL,
-                          next.statusURL == window.statusURL, next.after == request.after, next.before == request.before,
-                          next.startTimestamp == request.startTimestamp, next.nextTimestamp == request.before else {
+                          next.statusURL == window.statusURL else {
                         throw RecordedHTTPError.invalidWindow
                     }
+                    try next.validate(request: request)
                     window = try next.resolved(policy: policy)
                 }
                 guard window.state == .ready else { throw RecordedHTTPError.preparationFailed }
-                guard window.quality == request.quality ||
+                let derivativeFallback = caps.deliveryContract.supportsDirectOriginal && request.quality == .original &&
+                    window.delivery == .prepared && window.preparationReason != nil && caps.qualities.contains(window.quality)
+                guard window.quality == request.quality || derivativeFallback ||
                     (request.quality == .auto && caps.qualities.contains(window.quality)) else { throw RecordedHTTPError.invalidWindow }
                 let info = try await transport.mediaInfo(window: window)
                 try info.validate()
                 let mapping = try RecordedHTTPMapping(spans: window.timeline)
-                guard window.after == request.after, window.before == request.before, window.startTimestamp == request.startTimestamp,
-                      mapping.spans.allSatisfy({ $0.sourceEnd <= request.before + 0.000001 }) else {
+                try window.validate(request: request)
+                guard mapping.spans.allSatisfy({ $0.sourceEnd <= request.before + 0.000001 }) else {
                     throw RecordedHTTPError.invalidWindow
                 }
                 guard let effective = window.effectiveStartTimestamp, mapping.mediaTime(for: effective) != nil else { throw RecordedHTTPError.gap }

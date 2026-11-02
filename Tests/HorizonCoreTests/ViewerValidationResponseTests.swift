@@ -40,4 +40,10 @@ final class ViewerValidationResponseTests: XCTestCase {
         XCTAssertTrue(long.contains("could not be read"))
         XCTAssertTrue(viewingFailureMessage(HorizonError.http(422)).contains("details are unavailable"))
     }
+    func testCSRFDenialStays403RatherThanSchemaOrCameraDenial() {
+        let error = HorizonError.server(status: 403, message: "Missing X-CSRF-TOKEN header")
+        XCTAssertEqual(error.httpStatusCode, 403)
+        XCTAssertEqual(viewingFailureMessage(error), "HTTP 403: Missing X-CSRF-TOKEN header")
+        XCTAssertTrue(viewingFailureMessage(HorizonError.forbidden).contains("Camera access"))
+    }
 }

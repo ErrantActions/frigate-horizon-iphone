@@ -143,8 +143,39 @@ class TestWebRTCViewing(unittest.TestCase):
         self.assertTrue('let startPolicy = "next"' in model)
         self.assertTrue('nextTimestamp == before' in model)
         self.assertTrue("verificationLength: length" in core)
-        self.assertTrue("RecordedMP4Faststart.verify(reader: reader)" in core)
+        self.assertTrue("RecordedMP4Faststart.verifyIndex(reader: reader, allowTail: owned.delivery == .originalFile)" in core)
         self.assertTrue('"stream.mp4"' not in core)
+
+    def test_direct_delivery_is_negotiated_from_authenticated_openapi_and_real_codec_caps(self):
+        core = source("Sources/HorizonCore/RecordedHTTPAPITransport.swift")
+        model = source("Sources/HorizonCore/RecordedHTTPDelivery.swift")
+        client = source("App/Networking/HorizonRecordedHTTPClient.swift")
+        self.assertTrue('address.endpoint(["api","openapi.json"])' in core)
+        self.assertTrue("RecordedHTTPDeliveryContract.inspect(openAPI: metadata.data)" in core)
+        self.assertTrue('request.negotiating(contract: caps.deliveryContract, decoders: client.decoderCapabilities)' in core)
+        self.assertTrue('case preparedLegacy' in model)
+        self.assertTrue('metadataUnavailable(Int)' in model)
+        self.assertTrue('VTIsHardwareDecodeSupported(kCMVideoCodecType_H264)' in client)
+        self.assertTrue('kAudioFormatProperty_DecodeFormatIDs' in client)
+        self.assertTrue('video: [.h264]' in client)
+        self.assertTrue('video: [.h264, .hevc]' not in client)
+
+    def test_original_index_and_clipped_next_anchor_are_distinct_from_prepared_windows(self):
+        core = source("Sources/HorizonCore/RecordedHTTP.swift")
+        api = source("Sources/HorizonCore/RecordedHTTPAPITransport.swift")
+        self.assertTrue('fastStart || indexed' in core)
+        self.assertTrue('source >= window.after && source < window.before' in core)
+        self.assertTrue('delivery == .originalFile || before == request.before' in core)
+        self.assertTrue('originalTransition' in api)
+
+    def test_live_stage_diagnostics_and_heartbeat_match_current_integration_prompt(self):
+        peer = source("App/Media/OwnedWebRTCViewer.swift")
+        self.assertTrue('self.creationHTTPStatus = 201' in peer)
+        self.assertTrue('answerHTTPStatus = 204' in peer)
+        self.assertTrue('successfulHeartbeats += 1' in peer)
+        heartbeat = peer.split("private func beginMaintenance(")[1].split("func setQuality(")[0]
+        self.assertTrue('method: "PATCH"' in heartbeat)
+        self.assertTrue('body: Data("{}".utf8)' not in heartbeat)
 
     def test_pip_has_a_sample_buffer_renderer_not_an_avplayer_rtc_assumption(self):
         pip = source("App/Media/LivePictureInPictureController.swift")
