@@ -28,6 +28,12 @@ all production HTTP integration. Current deployed-v1 client qualification is
 recorded in the linked HTTP handoff. No physical-device result or new TestFlight
 upload is claimed.
 
+Current deployed-v1 source `0ef3b9f` passed
+[unsigned qualification 41367976945](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41367976945):
+372 Core tests, 67 committed guards and generic iOS-device Release build.
+Native authenticated HEAD/range/faststart/AVPlayer tests are isolated macOS
+fixtures, not deployed-server or iPhone qualification.
+
 No server agent contact, server deployment/settings, DNS/router changes,
 camera activation, source/retention/detector/Coral changes or test push is part
 of this work. The latest attachment prohibits deployment from this workstream:

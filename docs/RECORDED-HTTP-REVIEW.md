@@ -142,9 +142,51 @@ resolver, scope rejection, Original lead, native cookie/range/HEAD/faststart,
 same-item decoding/seeks, cancelled/late/admission/paused ownership and one
 upcoming slot. They are not production-session/device evidence.
 
-Qualification source/run/counts are recorded after the final build. No
-simulator/UI tests, signing, upload/TestFlight or backend deployment are part
-of this workstream. Latest uploaded binary remains historical TestFlight 1034.
+Source **`0ef3b9f`** passed
+[qualification 41367976945](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41367976945),
+job `125032133316`.
+
+| Exact check | Result |
+| --- | --- |
+| `swift test` | **372 tests, 0 failures** |
+| `python3 -m unittest discover -s tools/tests` | **67 committed guards passed** |
+| `python -m unittest discover -s tools\tests -p test_webrtc_viewing.py` | **18 focused local guards passed** |
+| Generic iOS-device Release command above | **BUILD SUCCEEDED** |
+| Source-generated pinned OpenAPI fixture | Seven operations and deployed model constraints validated |
+| Native macOS cookie/HEAD/range/faststart/AVPlayer decode/same-item seeks | Passed isolated fixtures |
+| 202/poll/empty/effective/next/resolver/Original lead | Passed v1 fixtures |
+| Upcoming slot, late cancellation, admission, paused ownership | Passed lifecycle fixtures/guards |
+| Authenticated production/native playback; physical iPhone measurements | Not run |
+| Simulator/UI tests, signing, archive/upload/TestFlight, backend deployment | Not run |
+
+The first native run caught an exact floating-point fixture assertion
+(`11.999999999999998` versus `12`); its explicit 1e-9 tolerance was corrected.
+Playback timestamps were not rounded/rebased to make that assertion pass.
+Latest uploaded binary remains historical TestFlight 1034.
+
+Changed client surfaces:
+
+- [RecordedHTTPAPITransport.swift](../Sources/HorizonCore/RecordedHTTPAPITransport.swift):
+  actual discovered v1 routes, typed control client/resolve DTOs, canonical
+  camera/UUID ownership and HEAD/faststart checks.
+- [RecordedHTTP.swift](../Sources/HorizonCore/RecordedHTTP.swift):
+  30-second cap, next/empty/effective fields, bounded planner, latency-based
+  continuation policy and owned preparation.
+- [HorizonRecordedHTTPClient.swift](../App/Networking/HorizonRecordedHTTPClient.swift)
+  and [HorizonAPI.swift](../App/Networking/HorizonAPI.swift): verified account,
+  existing authenticated API/CSRF and response metadata bridge.
+- [RecordedMP4Reader.swift](../Sources/HorizonCore/RecordedMP4Reader.swift):
+  bounded authenticated header-verification reads beside the native loader.
+- [RecordingPlayer.swift](../App/Media/RecordingPlayer.swift) and
+  [ReviewWorkspaceView.swift](../App/Views/ReviewWorkspaceView.swift):
+  effective source start, one upcoming slot, canonical hour/window continuation,
+  native in-window/next-span seeks, resolver/notice/intent handling and metrics.
+- [Localizable.strings](../App/en.lproj/Localizable.strings), v1 API/native-media/
+  ownership tests, viewing guards and directly related documentation.
+
+Unrelated dirty xtool work was not staged. Notifications, source recordings,
+downloads/exports, server settings/deployment and DNS/router/provider settings
+were not changed; no test notifications were sent.
 
 ## Required remaining acceptance
 
