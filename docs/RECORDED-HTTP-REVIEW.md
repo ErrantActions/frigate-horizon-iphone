@@ -15,6 +15,11 @@ generated OpenAPI request/response schemas before sending `delivery`,
 **no direct-delivery feature flag**; neither that version nor server version
 strings can safely negotiate these fields. Older contracts reject them.
 
+Owner-reported direct browser evidence is approximately 0.56-second server
+readiness, 1.05-1.40-second decoded 4K startup, 45 seconds/four file transitions
+with at most a 461ms gap, paused same-file seek 349ms and outside-file seek
+1.26 seconds. These are not native/iPhone measurements.
+
 The published owner branch is
 [webrtc-only-media-20261101](https://github.com/ErrantActions/Frigate-Horizon/tree/webrtc-only-media-20261101),
 pinned for the current direct-original work to
@@ -220,9 +225,54 @@ were not changed; no test notifications were sent.
 
 ## Required remaining acceptance
 
-The direct-original work is qualification-only until the native build/tests
-complete; its final results are recorded below. Historical 0ef3b9f/1035 results
+The direct-original qualification results are recorded below. Historical 0ef3b9f/1035 results
 above do not qualify the new direct-original client.
+
+### Qualified direct-original source
+
+Source **`d0a7561`** passed
+[unsigned qualification 41382828248](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41382828248),
+job `125077129964`.
+
+| Exact command/check | Result |
+| --- | --- |
+| `swift test` | **386 tests, 0 failures** |
+| `python3 -m unittest discover -s tools/tests` | **72 committed guards passed** |
+| `python -m unittest discover -s tools\tests -p test_webrtc_viewing.py` | **23 focused local guards passed** |
+| Generic iOS-device Release command above | **BUILD SUCCEEDED** |
+| New versus old published request-model fixture | Nine-field request accepted by new model; three extras rejected by old |
+| Authenticated native macOS tail-index H264 original | Decoded; repeated seeks kept the same item |
+| New/old/unavailable OpenAPI negotiation; scaled Data Saver | Passed fixtures |
+| Clipped original before/next, tiny file tail, measured direct lead | Passed fixtures |
+| Live five-field serialization/422 details/CSRF distinction/bodyless PATCH | Passed regressions and device compilation |
+| Real iPhone live 201/answer 204/decoded frames; recorded/device latency/audio/PiP | Not run |
+
+Changed surfaces:
+
+- [RecordedHTTPDelivery.swift](../Sources/HorizonCore/RecordedHTTPDelivery.swift):
+  typed delivery/codecs and generated OpenAPI contract negotiation.
+- [RecordedHTTP.swift](../Sources/HorizonCore/RecordedHTTP.swift) and
+  [RecordedHTTPAPITransport.swift](../Sources/HorizonCore/RecordedHTTPAPITransport.swift):
+  legacy-safe request encoding, clipped original boundaries, explicit derivatives,
+  authenticated stable HEAD and bounded front/tail index validation.
+- [HorizonRecordedHTTPClient.swift](../App/Networking/HorizonRecordedHTTPClient.swift):
+  confirmed native H264 hardware decode and AudioToolbox AAC/MP3 decode discovery.
+  HEVC is conservatively excluded without source-profile proof.
+- [RecordingPlayer.swift](../App/Media/RecordingPlayer.swift):
+  original/prepared metrics, compatibility/preparation notices and readiness-based
+  direct continuation lead.
+- [OwnedWebRTCViewer.swift](../App/Media/OwnedWebRTCViewer.swift),
+  [HorizonAPI.swift](../App/Networking/HorizonAPI.swift) and
+  [WebRTCViewing.swift](../Sources/HorizonCore/WebRTCViewing.swift):
+  observed 201/204/heartbeat diagnostics, bodyless PATCH, preserved live 422 fix
+  and safe explicit CSRF 403 handling.
+- Related localization, fixtures, source guards and viewing documentation.
+
+The current source is pushed but **not uploaded to TestFlight**. Build 1035
+does not contain either the later live 422 repair or direct-original changes.
+No native/backend deployment, TURN/DNS/router/server/provider change, test
+notification or original-recording/download mutation occurred. Real-device
+and authorized native-production evidence remain unavailable in this workstream.
 
 On a real iPhone with the deployed server: authenticated MP4 HEAD/ranges and
 206/416, cold/warm tap-to-frame and seek latency, repeated in-window seeks,

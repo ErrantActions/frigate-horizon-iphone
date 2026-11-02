@@ -42,6 +42,13 @@ canonical boundary. Live five-field 422 repair is preserved; diagnostics
 distinguish 201/204, heartbeat successes, schema 422 and CSRF 403. No physical
 iPhone result, backend/router mutation or native deployment is claimed.
 
+Direct-original source `d0a7561` passed
+[unsigned qualification 41382828248](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41382828248):
+386 Core tests, 72 guards and generic iOS-device Release build. Native macOS
+fixtures authenticated, decoded a tail-indexed H264 original and performed
+same-item seeks. Live 201/204 and heartbeat diagnostics are instrumented,
+but physical iPhone live/recorded success and latency remain unverified.
+
 No server agent contact, server deployment/settings, DNS/router changes,
 camera activation, source/retention/detector/Coral changes or test push is part
 of this work. The attachment initially prohibited deployment from this
