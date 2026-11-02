@@ -13,17 +13,20 @@ authenticated relay UDP. That is owner-provided browser evidence, not an iPhone
 qualification. TURN TLS, WAN/cellular, long-lived native peers and iOS PiP are
 not certified here.
 
-The deployed backend still uses the **old recorded WebRTC path**. Recorded HTTP
-schemas are draft, uncommitted and unvalidated: no HTTP manager/router/range
-endpoint or discovery field is supplied. A version string or live feature does
-not enable recorded HTTP. The app never calls guessed recorded endpoints.
+The latest owner handoff reports recorded HTTP deployed, with Original clock
+repairs in `0.19.0-7def9a838805-horizon`. The native client now wires the published
+v1 per-camera discovery, 202 sessions, resolver, owned HEAD/ranges and DELETE.
+A version string or live feature does not enable recorded HTTP; actual
+authenticated camera discovery does. The app never calls guessed endpoints.
 See [RECORDED-HTTP-REVIEW.md](RECORDED-HTTP-REVIEW.md).
 
-Client source `c6f904d` is qualified by
+Historical client source `c6f904d` was qualified by
 [unsigned run 41340057036](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41340057036):
 362 Core tests, 65 committed guards and generic iOS-device Release build passed.
-Native macOS authenticated MP4/AVPlayer fixtures passed; no physical-device or
-deployed recorded-HTTP result is claimed. No new TestFlight build was uploaded.
+Native macOS authenticated MP4/AVPlayer fixtures passed; that source still gated
+all production HTTP integration. Current deployed-v1 client qualification is
+recorded in the linked HTTP handoff. No physical-device result or new TestFlight
+upload is claimed.
 
 No server agent contact, server deployment/settings, DNS/router changes,
 camera activation, source/retention/detector/Coral changes or test push is part
@@ -82,5 +85,6 @@ unchanged. No protected release rule or NSE/signing profile was altered.
 Real iPhone H264/audio, grid/detail transitions, pins/Auto, long-running direct/
 relay sessions, TURN TLS/WAN/cellular, PiP restoration and final-viewer producer
 shutdown still need authorized device/server evidence. Recorded HTTP acceptance
-also requires its finalized and deployed discovery/OpenAPI/range contract.
+now targets the deployed contract, but still needs independent authorized
+iPhone authentication/range/continuation/audio/PiP and latency evidence.
 Do not revive any retired transport to conceal these boundaries.

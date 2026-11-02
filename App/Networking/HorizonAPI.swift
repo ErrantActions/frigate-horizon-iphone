@@ -78,6 +78,11 @@ final class HorizonAPI {
 
     func viewerRequest(_ url: URL, method: String = "GET", body: Data? = nil,
                        success: Set<Int> = [200]) async throws -> Data {
+        try await viewerResponse(url, method: method, body: body, success: success).data
+    }
+
+    func viewerResponse(_ url: URL, method: String = "GET", body: Data? = nil,
+                        success: Set<Int> = [200]) async throws -> (data: Data, response: HTTPURLResponse) {
         guard address.url.scheme == "https", address.hasSameOrigin(as: url),
               url.path.hasPrefix(address.endpoint(["api"]).path + "/"),
               url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
@@ -89,7 +94,7 @@ final class HorizonAPI {
         if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let result = try await dataWithHTTPResponse(request, viewerRequest: true)
         guard success.contains(result.response.statusCode) else { throw HorizonError.unexpectedResponse }
-        return result.data
+        return result
     }
 
     func image(_ url: URL) async throws -> Data {

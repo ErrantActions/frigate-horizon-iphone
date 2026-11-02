@@ -1,195 +1,157 @@
-# Recorded HTTPS MP4 review: client architecture, not deployed integration
+# Deployed recorded HTTPS MP4 v1: native client
 
-## Gate and interfaces
+## Authority and schema evidence
 
-The owner-approved replacement for recorded WebRTC is native AVPlayer over
-completed immutable faststart MP4 windows with authenticated HTTP byte ranges.
-The supplied HTTP schemas are **draft**. Discovery location, HTTP manager/router,
-resource routes and OpenAPI are not finalized or deployed.
+The latest owner handoff reports the HTTP backend/browser deployed. Initial
+HTTP qualification was `0.19.0-d5af223c45bc-horizon`; Original arbitrary-offset
+packet clocks are repaired in `0.19.0-7def9a838805-horizon`. A version string
+does **not** authorize playback: the client requires authenticated per-camera
+discovery and the supported v1 fields.
 
-`RecordedHTTPTransport` provides typed discovery, source selection/bounds,
-create/status, verified media information and owned close operations. It has
-no guessed route names, heartbeat/activation endpoints or recorded WebRTC
-controls. An adapter must be qualified against a finalized contract separately
-from server-advertised capability version. `fixture` qualification is an
-explicit test injection, not a JSON flag.
+The published owner branch is
+[webrtc-only-media-20261101](https://github.com/ErrantActions/Frigate-Horizon/tree/webrtc-only-media-20261101),
+pinned here to **`7def9a838805a38e4f48c30ad6024bc0ca2c2145`**:
 
-Production `RecordingPlayer` deliberately constructs
-`UnavailableRecordedHTTPTransport`. Live discovery/storage metadata and
-`0.19.0-d93250f20a6d-horizon` cannot bypass that gate. Its unavailable UI is not
-a mock claim of HTTP integration. No production recorded media request is made.
+- [Request models](https://github.com/ErrantActions/Frigate-Horizon/blob/7def9a838805a38e4f48c30ad6024bc0ca2c2145/frigate/api/defs/request/recorded_http_body.py)
+- [Response models](https://github.com/ErrantActions/Frigate-Horizon/blob/7def9a838805a38e4f48c30ad6024bc0ca2c2145/frigate/api/defs/response/recorded_http_response.py)
+- [Router](https://github.com/ErrantActions/Frigate-Horizon/blob/7def9a838805a38e4f48c30ad6024bc0ca2c2145/frigate/api/recorded_http.py)
 
-The draft types follow version/after/before/start_timestamp/quality, ready/
-preparing/failed/cleanup_pending status, opaque session identity and returned
-resource URLs. Typed advertised qualities include only recognized options;
-the UI exposes none until qualified discovery supplies them.
+A local isolated FastAPI 0.143/Pydantic 2.14 fixture generated OpenAPI from
+those published router/model definitions and validated seven operations,
+202/204, HEAD, the 30-second limit, next/empty fields and resolver schema.
+This is source/schema evidence, not a launched backend. Read-only normal-TLS
+`GET https://dvr.errantactions.com/api/openapi.json` returned **401** without
+sign-in. No credentials, server-agent contact, production sessions or backend
+deployment were used for this validation.
 
-## Real client player path prepared
+Owner-reported browser evidence: HEAD 200; exact 16-byte Range 206; invalid
+range 416; 720p decoding; repaired 11:59:58 to 12:00:42 hour continuation.
+Twenty-second 720p/1080p preparation from 4K/~25 fps was about nine seconds.
+None of this is an iPhone/AVPlayer or native latency qualification.
 
-- `RecordedHTTPWindowManager` serializes dispatched creation, coalesces canceled
-  replacements, awaits late creation and closes the known owner. Uncertain
-  create outcomes block replay; known 401/403/admission failures stay distinct.
-  Preparation polling is bounded. Failed close retains cleanup debt for retry
-  instead of declaring server work stopped. There is no recorded heartbeat.
-- A request normally prepares **30 seconds or less**, not the 120-second
-  maximum. Source start lies within the exclusive end bounds. Old ownership
-  is closed before new preparation; no invisible warmup/prefetch job is added.
-- `RecordedHTTPMapping` maps **actual native item time** through explicit
-  source/media spans, including unequal durations and nonzero media origins.
-  Source/media gaps are not interpolated; forward playback ends at a
-  discontinuity. An in-window scrub keeps its item/window and uses native
-  seek; outside-window intent replaces a bounded window. Stale seek callbacks
-  and late generations cannot resume the wrong intent.
-- Quality replacement preserves catalog position and paused/playing intent.
-  Auto is a bounded-window choice, not promised seamless ABR. Data Saver
-  chooses only a conservative advertised derivative. Native rate controls
-  check the ready item's capabilities.
-- `RecordedMP4Asset` uses documented `AVAssetResourceLoaderDelegate` APIs with
-  a private per-asset custom scheme. It supplies real content information and
-  bounded reads; it is **not** the retired custom-scheme HLS experiment.
-- Its authenticated reader performs **every** range GET using a private
-  memory-only cookie store seeded with existing secure API cookies and
-  `HTTPCookie.requestHeaderFields` on URLSession requests. Domain/path/security/
-  expiry matching is explicit and response cookie updates stay private. Public
-  AVFoundation resource requests do not rely on private header options.
-  Cancellation cancels the exact URLSession read; local shutdown clears the
-  native item, cancels the asset/reader and issues owned close.
-- All returned resources resolve under the HTTPS API base, retaining proxy
-  subpaths. Foreign origins, out-of-API URLs, traversal, credentials/query
-  auth and redirects are rejected before cookies are attached. Normal TLS/
-  hostname validation remains.
-- Reads are capped at 1 MiB each, with at most eight loader requests, no shared
-  URL/media cache. 206 offset/end/total, body length and stable total must agree.
-  416 must describe a true EOF with the known length; normal EOF avoids an
-  unnecessary request. A full 200 is rejected before unbounded buffering.
-  The former live-HLS full-200 rule does **not** apply to VOD ranges.
-- `AVPlayerViewController` supplies native rendering/playback and explicit PiP.
-  Only the explicit PiP owner survives background/offscreen. Account/API/
-  permission changes stop its item; live/recorded PiP ownership is exclusive.
-  Navigation restoration and physical PiP behavior remain device acceptance,
-  not something demonstrated by a model/fixture.
-- Recorded review, exports and recording range UI now use catalog timestamps,
-  typed identities and localized HTTP readiness/errors/controls. Incident/
-  camera-SD viewing remains gated until finalized source-capability bindings
-  exist; none substitutes live or a download URL.
-- Diagnostics separate player readiness, video-output decoded frame and
-  native-seek-to-decoded-frame timings. Missing values are "not observed".
-  Stall/access-log dropped frames/error codes are retained without private
-  paths or request/credential logging. These are not first-displayed-frame
-  or real-device certification claims.
+## Production client wiring
 
-Original-quality download/export requests, storage policy, retention, source
-recording quality and notification registration/selection were not changed.
+`RecordingPlayer` now constructs `RecordedHTTPAPITransport` through
+`HorizonRecordedHTTPClient`, not the former unavailable/draft adapter.
+The API retains its verified immutable account, HTTPS origin/proxy subpath,
+supported cookie login, write CSRF and redirect rejection.
 
-## Contract blockers before enabling production
+Per-camera `GET {camera}/recordings/http/status` must advertise v1, enabled/
+available, `https_mp4`, `http_byte_range`, maximum 30, originals unchanged,
+no HLS fallback and recognized advertised qualities. Returned `session_url`
+and `resolve_url` must match that camera's published API scope. Discovery
+does not create or probe a recording pipeline.
 
-1. Finalized discovery location/schema and OpenAPI resource URLs, source
-   bindings for time ranges/events/exports/previews/SD, supported qualities and
-   admission/auth/error/expiry/idempotent close semantics.
-2. Deployed HTTP manager/router/range endpoint and qualified capability.
-   The old recorded WebRTC API is not a fallback or proof of this capability.
-3. Evidence/metadata establishing completed immutable files, stable length,
-   faststart, correct 206/416/Content-Range and authoritative timeline spans.
-   Draft `ready` alone cannot manufacture the media-info guarantees required
-   by this client abstraction.
-4. On a real iPhone: authenticated repeated range reads, in/out-of-window seeks,
-   quality changes while paused, audio, latency, background/PiP/restoration,
-   expiry/permissions, cleanup and independent original downloads/exports.
+- POST the returned session URL with exactly version/after/before/
+  start_timestamp/quality/`start_policy: next`; accept **202 preparing**.
+- Poll only returned owned status URLs, bounded by time/attempts/hard expiry.
+  Validate immutable after/before/requested start/next anchor and exact owned
+  camera/UUID status, close and media URLs.
+- Ready uses **effective_start_timestamp**, mapped through measured
+  source/media spans. Original keyframe lead/nonzero media origin and unequal
+  span durations are not rebased or fabricated.
+- Empty has no playable asset. Its session is closed before a bounded resolver/
+  replacement. No HEAD/range/native decoder is started for empty/preparing.
+- `next_timestamp == before` is the continuation anchor, not a rounded last
+  span endpoint. This avoids rediscovering a fractional tail at hour cutoffs.
+- Resolver POST contains version/after/before/start_timestamp, **no quality**,
+  at most 3600 seconds and target strictly before before. Effective timestamps
+  are validated against the requested bounds. Null/exhausted is missing
+  footage in that search; null/unexhausted is an explicit search-limit message.
+  Empty resolution gets only one bounded replacement, not an endless loop.
+- DELETE uses the exact known owned UUID. Late creation remains awaited and
+  deleted; malformed returned metadata with a known UUID is canonically
+  deleted. Unknown creation is quarantined; failed closes retain cleanup debt.
 
-No server agent was contacted, server configuration/deployment/DNS/router
-modified or test push sent. No TestFlight/deployment is authorized by this
-attachment; qualification uses the existing **unsigned** device build only.
+The published HTTP contract selects **camera recording time ranges**. Event
+review can use its supplied camera/catalog bounds. It does not supply arbitrary
+export-file or camera-SD source binding. Those sources remain explicit
+unsupported/gated viewing states; the app never plays a different recording
+or an original download URL as their fallback.
 
-## Validation
+## Native media, continuation and ownership
 
-Local Windows command:
+Ready media gets authenticated HEAD validation for stable length, MIME,
+byte-range support and a strong ETag. Small authenticated range reads verify
+faststart `ftyp`/`moov` before `mdat`; a second HEAD confirms length/ETag.
+Ready atomic completion is a verified property of the pinned server contract,
+not an invented `ready`/growing-file assumption.
+
+The real AVPlayer asset uses documented AVAssetResourceLoader APIs. Every
+range GET uses documented HTTPCookie request headers with private memory-only
+domain/path/security/expiry matching and response cookie updates. No private
+AVURLAsset headers, auth URLs, exposed proxy, TLS/hostname bypass or shared
+media cache is introduced. Reads are bounded to 1 MiB, at most eight loader
+requests, with exact 206 offset/end/total/body validation and correct EOF/416.
+Unbounded full-200 responses are rejected before buffering.
+
+Initial requests normally prepare **10 seconds or less**, not 30 for every
+click. An upcoming continuation normally requests **20 seconds or less**.
+Only one upcoming owned window may prepare while the current native viewer
+is visible (including explicit visible PiP), actually playing and approaching
+its boundary. Lead time scales measured preparation time to the next window
+duration plus a two-second margin and native playback rate.
+
+No upcoming AVPlayer/asset/video output is created: only preparation/status/
+small header verification occurs until handoff. Additional admission failure
+is visible without terminating healthy current playback or looping per frame.
+Pause, seek, quality change, hiding and stop cancel the upcoming slot, including
+late creation cleanup. The old visible owner closes at handoff. There is no
+HTTP heartbeat, permanent warming job or fallback transport.
+
+In-window scrubs use the same native item and HTTP ranges. Source/media gaps
+are explicit; next actual spans use native seeks and a visible notice rather
+than interpolation. Outside-window seek and quality preserve latest catalog
+position and play/pause intent. Auto/Data Saver are conservative advertised
+window choices/replacements, not a claimed seamless ABR ladder.
+
+AVPlayerViewController provides native play/pause/rate/PiP. Scope changes and
+non-PiP background/hiding cancel loaders, clear items and close owners.
+Main-actor PiP callbacks are token/API/camera fenced. Scene resume reattaches
+only the same explicit PiP/catalog owner. Native fold-aware UI, audio/mute,
+notification opt-outs/confidence/private photos and independent original
+downloads/exports remain.
+
+Diagnostics include window preparation, native readiness, video-output decoded
+frame and seek-to-decoded-frame times, access-log drops/stalls/error codes.
+Missing values are not observed. Private URLs, original paths and credentials
+are not logged; decoded output is not claimed to be first displayed video.
+
+## Validation commands and evidence boundary
 
 ```powershell
-python -m unittest discover -s tools\tests
-```
-
-Passed 72 local guards (includes existing untracked experimental xtool tests
-that are not part of this change). The committed checkout is checked separately
-in CI. Native Swift is unavailable on this Windows workstation.
-
-Existing CI qualification command:
-
-```powershell
+python -m unittest discover -s tools\tests -p test_webrtc_viewing.py
 gh workflow run ios.yml --repo ErrantActions/frigate-horizon-iphone --ref main `
   -f confirm_paid_run=true -f include_compatibility=false `
   -f device_build_only=true -f upload_artifacts=false
 ```
 
-It runs `python3 -m unittest discover -s tools/tests`, `swift test`, and:
+Existing CI runs:
 
 ```sh
+python3 -m unittest discover -s tools/tests
+swift test
 xcodebuild -project FrigateHorizon.xcodeproj -scheme FrigateHorizon \
   -configuration Release -destination 'generic/platform=iOS' \
   -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO build
 ```
 
-New tests cover draft gating, API resolution/subpaths, timeline gaps, native
-seek decisions, paused quality replacement, late creation, cancellation,
-cleanup debt, distinct auth failures, uncertain creation, exact ranges and
-bounded loading. Native macOS AVFoundation/AVPlayer tests use a locally
-generated H264 MP4 and an HTTPS URLProtocol fixture with inert cookies. They
-are explicitly not server integration or an iPhone/simulator test.
+Tests use isolated v1 control responses and locally generated H264 MP4 HTTPS
+URLProtocol fixtures. They validate discovery, 202/poll/empty/effective/next/
+resolver, scope rejection, Original lead, native cookie/range/HEAD/faststart,
+same-item decoding/seeks, cancelled/late/admission/paused ownership and one
+upcoming slot. They are not production-session/device evidence.
 
-## Qualified source and exact results
+Qualification source/run/counts are recorded after the final build. No
+simulator/UI tests, signing, upload/TestFlight or backend deployment are part
+of this workstream. Latest uploaded binary remains historical TestFlight 1034.
 
-Source **`c6f904d`** passed
-[qualification 41340057036](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41340057036),
-job `124947965471`. No release workflow was invoked.
+## Required remaining acceptance
 
-| Check | Result |
-| --- | --- |
-| `swift test` | **362 tests, 0 failures** |
-| `python3 -m unittest discover -s tools/tests` | **65 committed guards passed** |
-| `python -m unittest discover -s tools\tests -p test_webrtc_viewing.py` | **16 focused local guards passed** |
-| Generic iOS-device Release `xcodebuild ... CODE_SIGNING_ALLOWED=NO build` above | **BUILD SUCCEEDED** |
-| Authenticated MP4 range/cookie scope/401/403/cancellation native fixtures | Passed |
-| Native macOS AVFoundation finite MP4 loading | Passed |
-| Native macOS AVPlayer H264 fixture decoding and two seeks using the same item | Passed |
-| Window replacement, paused intent, late creation, gaps, cleanup debt tests | Passed |
-| Simulator/UI tests, signing, archive/upload/TestFlight/deployment | Not run |
-| Real server recorded HTTP / real iPhone live or recorded acceptance | Not run; blockers above remain |
-
-Initial qualification found a nested helper, then missing cookies on observed
-requests, then AVKit delegate actor isolation errors. All were corrected;
-cookie assertions were not weakened. The fixture now rejects unauthenticated
-resource requests. PiP callbacks hop to MainActor and are fenced by coordinator
-token/current API/camera scope. Background/foreground handlers release or
-reattach inline ownership without stopping/reopening an explicit matching PiP.
-
-**No measured iPhone tap/seek latency, audio synchronization, live 4K/adaptation,
-stall/drop-rate, multi-camera, WAN/cellular, TURN-TLS or PiP results exist here.**
-Fixture test execution durations are not device startup/seek measurements.
-The metrics UI is instrumented for subsequent authorized acceptance.
-
-### Changed client surfaces
-
-- [RecordedHTTP.swift](../Sources/HorizonCore/RecordedHTTP.swift): draft DTOs,
-  capability/qualification/URL guards, timeline mapping and owned window jobs.
-- [RecordedMP4Reader.swift](../Sources/HorizonCore/RecordedMP4Reader.swift) and
-  [RecordedMP4Asset.swift](../Sources/HorizonCore/RecordedMP4Asset.swift):
-  public cookie-authenticated bounded range/resource loading.
-- [RecordingPlayer.swift](../App/Media/RecordingPlayer.swift): real native
-  AVPlayer controls, intent/window replacement, decoded-frame metrics and PiP.
-- [ReviewWorkspaceView.swift](../App/Views/ReviewWorkspaceView.swift),
-  [RecordingsView.swift](../App/Views/RecordingsView.swift) and
-  [ExportsView.swift](../App/Views/ExportsView.swift): catalog-time UI and controls.
-- [HorizonApp.swift](../App/HorizonApp.swift),
-  [AppModel.swift](../App/AppModel.swift),
-  [HorizonRoot.swift](../App/Views/HorizonRoot.swift) and
-  [LivePictureInPictureController.swift](../App/Media/LivePictureInPictureController.swift):
-  scope/background/cleanup and exclusive PiP ownership.
-- [RecordedViewing.swift](../Sources/HorizonCore/RecordedViewing.swift):
-  preserve typed catalog selection; remove retired recorded WebRTC controls.
-- [WebRTCViewing.swift](../Sources/HorizonCore/WebRTCViewing.swift): accept
-  minimum supported deployed live discovery without requiring storage metadata;
-  never interpret it as recorded support.
-- [Localizable.strings](../App/en.lproj/Localizable.strings), draft/native test
-  fixtures and source guards; related viewing/release documentation.
-
-Original download/export transfer code, notifications and unrelated dirty
-experimental xtool work were not altered or staged.
+On a real iPhone with the deployed server: authenticated MP4 HEAD/ranges and
+206/416, cold/warm tap-to-frame and seek latency, repeated in-window seeks,
+outside/empty/gap/hour continuation, paused quality changes, audio, admission,
+idle/background/PiP/restoration and final cleanup. Check original download/
+export behavior independently. Native live H264/audio, grid/detail transitions,
+long direct/relay peers, TURN TLS and WAN/cellular remain separate unverified
+acceptance. Do not claim browser fixtures certify any of these.

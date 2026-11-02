@@ -58,13 +58,15 @@ class TestWebRTCViewing(unittest.TestCase):
         self.assertIn("pendingQuality = QualityIntent(height: height)", peer)
         self.assertIn("self.setQuality(next.height)", peer)
 
-    def test_recorded_http_is_gated_without_guessed_routes_or_mock_adapter(self):
+    def test_recorded_http_uses_authenticated_deployed_discovery_not_a_version_gate(self):
         player = source("App/Media/RecordingPlayer.swift")
         self.assertIn("ViewingMessage.recorded", player)
         self.assertNotIn("URLSession", player)
         self.assertNotIn("AVURLAsset", player)
-        self.assertTrue("UnavailableRecordedHTTPTransport(address: api.address)" in player)
+        self.assertTrue("RecordedHTTPAPITransport(client: HorizonRecordedHTTPClient(api: api))" in player)
         self.assertTrue("transport.qualification.usable" in player)
+        self.assertTrue("let caps = try await transport.discover(camera: selection.camera)" in player)
+        self.assertTrue("try caps.validate()" in player)
         self.assertTrue("player.seek(to:" in player)
         sd = source("App/Views/CameraSDReplayView.swift")
         self.assertNotIn("api.get", sd)
@@ -118,6 +120,31 @@ class TestWebRTCViewing(unittest.TestCase):
         core = source("Sources/HorizonCore/RecordedHTTP.swift")
         self.assertTrue("\n    public func resolved(policy:" in core)
         self.assertTrue("\n        public func" not in core)
+
+    def test_only_one_visible_playing_continuation_is_prepared_without_decoding_it(self):
+        player = source("App/Media/RecordingPlayer.swift")
+        self.assertTrue("upcomingManager == nil" in player)
+        self.assertTrue("guard visibleViewer, wantsToPlay" in player)
+        self.assertTrue("player.timeControlStatus == .playing, !loading, !isSeeking, !transition" in player)
+        self.assertTrue("current.window.nextTimestamp" in player)
+        begin = player.split("private func beginUpcoming(")[1].split("private func maybePrepareUpcoming")[0]
+        self.assertTrue("install(" not in begin)
+        self.assertTrue("AVPlayer" not in begin)
+        for method in ["func setPlaying(", "private func seekMedia(", "func setQuality(", "func stop("]:
+            block = player.split(method)[1].split("\n    }")[0]
+            self.assertTrue("cancelUpcoming(" in block, method)
+
+    def test_deployed_http_routes_and_request_fields_match_v1_without_retired_fallbacks(self):
+        core = source("Sources/HorizonCore/RecordedHTTPAPITransport.swift")
+        model = source("Sources/HorizonCore/RecordedHTTP.swift")
+        self.assertTrue('success: [202]' in core)
+        self.assertTrue('success: [204]' in core)
+        self.assertTrue('["api",camera,"recordings","http"]' in core)
+        self.assertTrue('let startPolicy = "next"' in model)
+        self.assertTrue('nextTimestamp == before' in model)
+        self.assertTrue("verificationLength: length" in core)
+        self.assertTrue("RecordedMP4Faststart.verify(reader: reader)" in core)
+        self.assertTrue('"stream.mp4"' not in core)
 
     def test_pip_has_a_sample_buffer_renderer_not_an_avplayer_rtc_assumption(self):
         pip = source("App/Media/LivePictureInPictureController.swift")

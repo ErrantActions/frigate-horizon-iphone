@@ -4,8 +4,9 @@
 architecture.** TestFlight 1034 remains the last uploaded binary; it predates
 the HTTP architecture. The latest owner attachment prohibits deployment from
 this workstream, so do not automatically run the release workflow for this
-update. The earlier HLS sections are historical. Live is owner-reported
-deployed; recorded HTTP discovery/OpenAPI/ranges remain unfinished. Do not
+update. The earlier HLS sections are historical. Live and recorded HTTP are
+owner-reported deployed; the current source wires authenticated recorded-v1
+discovery/ranges, while physical iPhone qualification remains unverified. Do not
 revive HLS, recorded WebRTC or download-URL streaming as a fallback. See
 [WEBRTC-VIEWING.md](WEBRTC-VIEWING.md) for implementation, exact checks and blockers.
 

@@ -22,7 +22,7 @@ private actor FixtureHTTPWindows: RecordedHTTPTransport {
         await withCheckedContinuation { started.append($0) }
     }
     func discover(camera: String) async throws -> RecordedHTTPCapability {
-        .init(maxWindowSeconds: 120, qualities: [.auto,.h360,.h720,.h1080,.original])
+        .init(maxWindowSeconds: 30, qualities: [.auto,.h360,.h720,.h1080,.original])
     }
     func sourceRange(selection: RecordedViewingSelection) async throws -> ClosedRange<Double> { 100...500 }
     func create(selection: RecordedViewingSelection, request: RecordedHTTPWindowRequest) async throws -> RecordedHTTPWindow {
@@ -37,7 +37,9 @@ private actor FixtureHTTPWindows: RecordedHTTPTransport {
             closeURL: address.endpoint(["api","fixtures",id]),
             mediaURL: address.endpoint(["api","fixtures",id,"content.mp4"]),
             hardExpiresAt: Date().timeIntervalSince1970 + 60,
-            timeline: [.init(sourceStart: request.after, sourceEnd: request.before, mediaStart: 0, mediaEnd: request.before - request.after)])
+            timeline: [.init(sourceStart: request.after, sourceEnd: request.before, mediaStart: 0, mediaEnd: request.before - request.after)],
+            after: request.after, before: request.before, startTimestamp: request.startTimestamp,
+            effectiveStartTimestamp: request.startTimestamp, nextTimestamp: request.before)
     }
     func status(window: RecordedHTTPWindow) async throws -> RecordedHTTPWindow { window }
     func mediaInfo(window: RecordedHTTPWindow) async throws -> RecordedHTTPMediaInfo {
@@ -47,12 +49,18 @@ private actor FixtureHTTPWindows: RecordedHTTPTransport {
         if closeFailures > 0 { closeFailures -= 1; throw HorizonError.http(503) }
         closes.append(window.sessionID)
     }
+    func resolve(camera: String, request: RecordedHTTPResolveRequest) async throws -> RecordedHTTPResolution {
+        try JSONDecoder().decode(RecordedHTTPResolution.self, from: JSONSerialization.data(withJSONObject: [
+            "version":1,"after":request.after,"before":request.before,"start_timestamp":request.startTimestamp,
+            "effective_start_timestamp":request.startTimestamp,"exhausted":false,
+            "searched_before":request.before,"reason":"frame_found"]))
+    }
 }
 
 final class RecordedViewingTests: XCTestCase {
     private let selection = RecordedViewingSelection(camera: "front", identity: .timeRange(start: 100, end: 500))
     private func request(_ at: Double = 125, quality: RecordedHTTPQuality = .auto) throws -> RecordedHTTPWindowRequest {
-        try .bounded(sourceRange: 100...500, at: at, maximum: 120, quality: quality)
+        try .bounded(sourceRange: 100...500, at: at, maximum: 30, quality: quality)
     }
     func testUnknownProductionContractCannotBeEnabledByAServerVersion() async throws {
         let transport = UnavailableRecordedHTTPTransport(address: try ServerAddress("https://dvr.invalid"))
@@ -63,10 +71,10 @@ final class RecordedViewingTests: XCTestCase {
         catch { XCTAssertEqual(error.localizedDescription, RecordedHTTPError.unavailable.localizedDescription) }
     }
     func testDraftCapabilityRequiresHTTPSMP4RangeAndUnchangedOriginalsWithoutHLS() throws {
-        let valid = try JSONEncoder().encode(RecordedHTTPCapability(maxWindowSeconds: 120, qualities: [.auto,.h720]))
+        let valid = try JSONEncoder().encode(RecordedHTTPCapability(maxWindowSeconds: 30, qualities: [.auto,.h720]))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: valid) as? [String: Any])
         for change in [["version":2],["transport":"webrtc"],["seek":"clock"],["hls_fallback":true],
-                       ["original_recordings_unchanged":false],["max_window_seconds":121],["enabled":false],
+                       ["original_recordings_unchanged":false],["max_window_seconds":31],["enabled":false],
                        ["available":false],["qualities":[]]] as [[String: Any]] {
             var value = object; value.merge(change) { _, new in new }
             let caps = try JSONDecoder().decode(RecordedHTTPCapability.self, from: JSONSerialization.data(withJSONObject: value))
@@ -104,20 +112,20 @@ final class RecordedViewingTests: XCTestCase {
             .init(sourceStart: 1, sourceEnd: 3, mediaStart: 0, mediaEnd: 2),
             .init(sourceStart: 2, sourceEnd: 4, mediaStart: 2, mediaEnd: 4)]))
     }
-    func testWindowDefaultsToThirtySecondsNotTheMaximumAndHonorsTheExclusiveEnd() throws {
-        XCTAssertEqual(try request().before - request().after, 30)
+    func testWindowStartsSmallAndHonorsTheThirtySecondCapAndExclusiveEnd() throws {
+        XCTAssertEqual(try request().before - request().after, 10)
         let short = try RecordedHTTPWindowRequest.bounded(sourceRange: 100...500, at: 125, maximum: 10, quality: .h720)
         XCTAssertEqual(short.before - short.after, 10)
-        XCTAssertThrowsError(try RecordedHTTPWindowRequest(after: 100, before: 220.1, startTimestamp: 110, quality: .auto))
+        XCTAssertThrowsError(try RecordedHTTPWindowRequest(after: 100, before: 130.1, startTimestamp: 110, quality: .auto))
         XCTAssertThrowsError(try RecordedHTTPWindowRequest(after: 100, before: 130, startTimestamp: 130, quality: .auto))
         XCTAssertThrowsError(try request(500))
     }
     func testDataSaverAndPinsUseOnlyAdvertisedQualities() throws {
-        let caps = RecordedHTTPCapability(maxWindowSeconds: 120, qualities: [.auto,.h360,.h720])
+        let caps = RecordedHTTPCapability(maxWindowSeconds: 30, qualities: [.auto,.h360,.h720])
         XCTAssertEqual(try caps.quality(.auto, dataSaver: true), .h360)
         XCTAssertEqual(try caps.quality(.h720, dataSaver: false), .h720)
         XCTAssertThrowsError(try caps.quality(.h2160, dataSaver: false))
-        XCTAssertThrowsError(try RecordedHTTPCapability(maxWindowSeconds: 120, qualities: [.original]).quality(.auto, dataSaver: true))
+        XCTAssertThrowsError(try RecordedHTTPCapability(maxWindowSeconds: 30, qualities: [.original]).quality(.auto, dataSaver: true))
     }
     func testReadyImmutableWindowAndQualityReplacementPreservePausedIntent() async throws {
         let fixture = FixtureHTTPWindows()
@@ -168,6 +176,37 @@ final class RecordedViewingTests: XCTestCase {
         let maximum = await fixture.maximumActiveCreates
         XCTAssertEqual(maximum, 1)
         await manager.cancel(); try await manager.finishCleanup()
+    }
+    func testOneUpcomingSlotCancelsLateCreationWithoutClosingTheVisibleWindow() async throws {
+        let fixture = FixtureHTTPWindows()
+        let current = RecordedHTTPWindowManager(transport: fixture)
+        let visible = try await current.prepare(selection: selection, request: request(), playing: true)
+        await fixture.configure(delay: true)
+        let upcoming = RecordedHTTPWindowManager(transport: fixture)
+        let next = try RecordedHTTPWindowRequest.continuation(sourceRange: 100...500,
+            after: visible.window.nextTimestamp, maximum: 30, quality: .h720)
+        let pending = Task { try await upcoming.prepare(selection: selection, request: next, playing: true) }
+        try await Task.sleep(for: .milliseconds(30))
+        await upcoming.cancel()
+        do { _ = try await pending.value; XCTFail() } catch is CancellationError {}
+        try await upcoming.finishCleanup()
+        let closures = await fixture.closes
+        XCTAssertEqual(closures, ["fixture-2"])
+        XCTAssertFalse(closures.contains(visible.window.sessionID))
+        await current.cancel(); try await current.finishCleanup()
+    }
+    func testUpcomingAdmissionFailureIsDistinctFromCurrentPlaybackAndDoesNotRetry() async throws {
+        let fixture = FixtureHTTPWindows()
+        let current = RecordedHTTPWindowManager(transport: fixture)
+        let visible = try await current.prepare(selection: selection, request: request(), playing: true)
+        await fixture.configure(error: .http(429))
+        let upcoming = RecordedHTTPWindowManager(transport: fixture)
+        do { _ = try await upcoming.prepare(selection: selection, request: request(150), playing: true); XCTFail() }
+        catch { XCTAssertEqual((error as? HorizonError)?.httpStatusCode, 429) }
+        let creates = await fixture.creates, closed = await fixture.closes
+        XCTAssertEqual(creates, 2); XCTAssertFalse(closed.contains(visible.window.sessionID))
+        await upcoming.cancel(); try await upcoming.finishCleanup()
+        await current.cancel(); try await current.finishCleanup()
     }
     func testIncompleteOrMutableFilesNeverBecomeReadyAssets() async throws {
         let fixture = FixtureHTTPWindows(); await fixture.configure(immutable: false)

@@ -13,8 +13,8 @@ private final class MP4FixtureProtocol: URLProtocol, @unchecked Sendable {
     private static var fixtures: [URL: Fixture] = [:]
     private var cancelled = false
     private let stateLock = NSLock()
-    static func install(_ body: Data, status: Int? = nil, delay: Bool = false) -> URL {
-        let url = URL(string: "https://fixture.invalid/proxy/api/fixtures/\(UUID().uuidString)/window.mp4")!
+    static func install(_ body: Data, status: Int? = nil, delay: Bool = false, at address: URL? = nil) -> URL {
+        let url = address ?? URL(string: "https://fixture.invalid/proxy/api/fixtures/\(UUID().uuidString)/window.mp4")!
         lock.lock(); fixtures[url] = Fixture(body: body, status: status, delay: delay); lock.unlock()
         return url
     }
@@ -51,6 +51,22 @@ private final class MP4FixtureProtocol: URLProtocol, @unchecked Sendable {
         else { deliver() }
     }
     override func stopLoading() { stateLock.lock(); cancelled = true; stateLock.unlock() }
+}
+
+private struct MP4HeadFixtureClient: RecordedHTTPControlClient {
+    let address = try! ServerAddress("https://fixture.invalid/proxy")
+    let cookies: [HTTPCookie]
+    let length: Int
+    var mediaConfiguration: URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MP4FixtureProtocol.self]
+        return configuration
+    }
+    func request(_ url: URL, method: String, body: Data?, success: Set<Int>) async throws -> RecordedHTTPControlResponse {
+        guard method == "HEAD", success.contains(200) else { throw HorizonError.unexpectedResponse }
+        return RecordedHTTPControlResponse(data: Data(), status: 200, headers: [
+            "Content-Type":"video/mp4","Accept-Ranges":"bytes","Content-Length":String(length),"ETag":"\"fixture-only\""])
+    }
 }
 
 final class RecordedMP4AssetTests: XCTestCase {
@@ -139,6 +155,25 @@ final class RecordedMP4AssetTests: XCTestCase {
         XCTAssertFalse(requests.isEmpty)
         XCTAssertTrue(requests.allSatisfy { $0.value(forHTTPHeaderField: "Cookie")?.contains("session=fixture-only") == true })
         XCTAssertEqual(resource.asset.url.scheme, "horizon-review")
+    }
+    func testPublishedReadyMediaIsVerifiedWithHEADAndAuthenticatedFaststartRanges() async throws {
+        let body = try await makeVideoFixture()
+        let client = MP4HeadFixtureClient(cookies: [try XCTUnwrap(HTTPCookie(properties: [
+            .domain:"fixture.invalid",.path:"/proxy/api",.name:"session",.value:"fixture-only",.secure:"TRUE"]))], length: body.count)
+        let id = UUID().uuidString.lowercased()
+        let url = client.address.endpoint(["api","front","recordings","http","sessions",id])
+        let media = MP4FixtureProtocol.install(body, at: url.appendingPathComponent("media.mp4"))
+        defer { MP4FixtureProtocol.remove(media) }
+        let window = RecordedHTTPWindow(sessionID: id, camera: "front", state: .ready, quality: .h720, audio: false,
+            statusURL: url, closeURL: url, mediaURL: media, hardExpiresAt: Date().timeIntervalSince1970 + 60,
+            timeline: [.init(sourceStart: 100, sourceEnd: 110, mediaStart: 0, mediaEnd: 10)],
+            after: 100, before: 110, startTimestamp: 100, effectiveStartTimestamp: 100, nextTimestamp: 110)
+        let transport = try RecordedHTTPAPITransport(client: client)
+        let info = try await transport.mediaInfo(window: window)
+        XCTAssertTrue(info.fastStart); XCTAssertTrue(info.immutable); XCTAssertEqual(info.length, Int64(body.count))
+        XCTAssertTrue(MP4FixtureProtocol.requests(for: media).allSatisfy {
+            $0.value(forHTTPHeaderField: "Cookie")?.contains("session=fixture-only") == true
+        })
     }
     @MainActor
     func testNativeAVPlayerDecodesAndSeeksFixtureWithoutReplacingItsItem() async throws {

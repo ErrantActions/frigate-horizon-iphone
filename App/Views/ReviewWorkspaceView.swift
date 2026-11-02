@@ -98,11 +98,6 @@ final class ReviewPlaybackStore: ObservableObject {
         loading = true
         defer { if clipGeneration == token { loading = false } }
         guard timestamp >= range.start, timestamp < range.end else { missingRecording = true; return }
-        if let coverage, !coverage.contains(timestamp) {
-            missingRecording = true
-            playback.setPlaying(false)
-            return
-        }
         loadedCamera = camera
         playback.open(selection: .init(camera: camera, identity: .timeRange(start: range.start, end: range.end)),
             api: api, sourceRange: range.start...range.end, startTimestamp: timestamp, autoplay: autoplay)
@@ -273,7 +268,7 @@ struct ReviewWorkspaceView: View {
     private func pauseForTool() {
         resumeAfterTool = playbackRequested
         resumeAfterCameraChange = resumeAfterTool
-        store.playback.player.pause()
+        store.playback.setPlaying(false)
     }
 
     private func resumeAfterTools() {
@@ -294,6 +289,7 @@ struct ReviewWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     playbackControls(compact: true)
                     RecordedPlaybackControls(owner: store.playback)
+                    if let notice = store.playback.notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
                     timelinePane
                         .frame(height: dynamicTypeSize.isAccessibilitySize
                             ? 176 : max(112, min(140, geometry.size.height * 0.42)))
@@ -323,7 +319,7 @@ struct ReviewWorkspaceView: View {
                     events: store.events, motion: store.motion,
                     beginScrub: {
                         resumeAfterScrub = playbackRequested
-                        store.playback.player.pause()
+                        store.playback.setPlaying(false)
                     },
                     commit: { requestSeek($0) }
                 )
@@ -358,12 +354,11 @@ struct ReviewWorkspaceView: View {
     private func playbackControls(compact: Bool) -> some View {
         HorizonPlaybackDock(time: Date(timeIntervalSince1970: timestamp),
             status: playbackStatus, playing: playing,
-            playEnabled: !(store.loading || store.missingRecording || store.error != nil || store.playback.player.currentItem == nil),
+            playEnabled: !(store.loading || store.missingRecording || store.error != nil || !store.playback.hasPlaybackIntent),
             compact: compact,
             back: { requestSeek(timestamp - 15) },
             togglePlayback: {
-                if playbackRequested { store.playback.player.pause() }
-                else { store.playback.player.play() }
+                store.playback.setPlaying(!playbackRequested)
             },
             forward: { requestSeek(timestamp + 15) })
     }

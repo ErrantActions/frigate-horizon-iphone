@@ -2,9 +2,10 @@ import Foundation
 
 public enum RecordedHTTPError: LocalizedError, Sendable {
     case unavailable, invalidContract, invalidWindow, gap, expired, preparationFailed, rangeUnsupported, invalidRange, uncertainCreation
+    case emptyWindow(nextTimestamp: Double), searchLimit, unsupportedSource, rejectedCreation
     public var errorDescription: String? {
         switch self {
-        case .unavailable: return String(localized: "review.httpUnavailable", defaultValue: "Recorded HTTPS MP4 review requires the finalized server discovery and range contract. Original downloads remain available.")
+        case .unavailable: return String(localized: "review.httpUnavailable", defaultValue: "Recorded HTTP viewing is disabled or unavailable for this camera. Check server readiness and retry. Original downloads remain available.")
         case .invalidContract: return String(localized: "review.invalidContract", defaultValue: "The server did not provide a supported, qualified recorded HTTP contract.")
         case .invalidWindow: return String(localized: "review.invalidWindow", defaultValue: "The recorded window or source/media timeline is invalid.")
         case .gap: return String(localized: "review.gap", defaultValue: "No recorded footage maps to this position. Choose another recorded span.")
@@ -13,6 +14,10 @@ public enum RecordedHTTPError: LocalizedError, Sendable {
         case .rangeUnsupported: return String(localized: "review.rangeUnsupported", defaultValue: "The MP4 resource did not provide the required immutable byte-range behavior.")
         case .invalidRange: return String(localized: "review.invalidRange", defaultValue: "The server returned an invalid or inconsistent MP4 byte range.")
         case .uncertainCreation: return String(localized: "review.uncertainCreation", defaultValue: "Recorded window creation could not be accounted for. New preparation is blocked until server ownership is reconciled.")
+        case .emptyWindow: return String(localized: "review.empty", defaultValue: "This prepared window has no playable frame. Looking for the next usable frame.")
+        case .searchLimit: return String(localized: "review.searchLimit", defaultValue: "The bounded frame search reached its limit. This does not prove footage is missing. Advance the timeline and try again.")
+        case .unsupportedSource: return String(localized: "review.unsupportedSource", defaultValue: "The server's recorded HTTP API supports camera recording ranges, not this media source. Original downloads remain available.")
+        case .rejectedCreation: return String(localized: "review.invalidContract", defaultValue: "The server did not provide a supported, qualified recorded HTTP contract.")
         }
     }
 }
@@ -43,19 +48,24 @@ public struct RecordedHTTPCapability: Codable, Sendable {
     public let originalsUnchanged: Bool
     public let hlsFallback: Bool
     public let qualities: [RecordedHTTPQuality]
+    public let sessionURL: String?
+    public let resolveURL: String?
+    public let reason: String?
     enum CodingKeys: String, CodingKey {
         case version, enabled, available, transport, seek, qualities
         case maxWindowSeconds = "max_window_seconds", originalsUnchanged = "original_recordings_unchanged"
         case hlsFallback = "hls_fallback"
+        case sessionURL = "session_url", resolveURL = "resolve_url", reason
     }
-    public init(maxWindowSeconds: Double, qualities: [RecordedHTTPQuality]) {
+    public init(maxWindowSeconds: Double, qualities: [RecordedHTTPQuality], sessionURL: String? = nil, resolveURL: String? = nil) {
         version = 1; enabled = true; available = true; transport = "https_mp4"; seek = "http_byte_range"
         self.maxWindowSeconds = maxWindowSeconds; originalsUnchanged = true; hlsFallback = false; self.qualities = qualities
+        self.sessionURL = sessionURL; self.resolveURL = resolveURL; reason = nil
     }
     public func validate() throws {
         guard version == 1, transport == "https_mp4", seek == "http_byte_range",
               originalsUnchanged, !hlsFallback, maxWindowSeconds.isFinite,
-              (0.1...120).contains(maxWindowSeconds), !qualities.isEmpty,
+              (0.1...30).contains(maxWindowSeconds), !qualities.isEmpty,
               Set(qualities).count == qualities.count else { throw RecordedHTTPError.invalidContract }
         guard enabled && available else { throw RecordedHTTPError.unavailable }
     }
@@ -133,25 +143,36 @@ public struct RecordedHTTPWindowRequest: Encodable, Equatable, Sendable {
     public let before: Double
     public let startTimestamp: Double
     public let quality: RecordedHTTPQuality
-    enum CodingKeys: String, CodingKey { case version, after, before, quality; case startTimestamp = "start_timestamp" }
-    public init(after: Double, before: Double, startTimestamp: Double, quality: RecordedHTTPQuality, maximum: Double = 120) throws {
+    public let startPolicy = "next"
+    enum CodingKeys: String, CodingKey {
+        case version, after, before, quality
+        case startTimestamp = "start_timestamp", startPolicy = "start_policy"
+    }
+    public init(after: Double, before: Double, startTimestamp: Double, quality: RecordedHTTPQuality, maximum: Double = 30) throws {
         guard [after,before,startTimestamp,maximum].allSatisfy(\.isFinite), after >= 0,
-              (0.1...120).contains(before - after), before - after <= maximum,
+              (0.1...30).contains(before - after), before - after <= maximum,
               startTimestamp >= after, startTimestamp < before else { throw RecordedHTTPError.invalidWindow }
         self.after = after; self.before = before; self.startTimestamp = startTimestamp; self.quality = quality
     }
     public static func bounded(sourceRange: ClosedRange<Double>, at source: Double, maximum: Double,
-                               quality: RecordedHTTPQuality) throws -> Self {
+                               quality: RecordedHTTPQuality, duration: Double = 10) throws -> Self {
         guard source >= sourceRange.lowerBound, source < sourceRange.upperBound else { throw RecordedHTTPError.gap }
-        let width = min(30, maximum)
-        let after = max(sourceRange.lowerBound, source - min(5, width / 4))
-        return try Self(after: after, before: min(sourceRange.upperBound, after + width),
+        let width = min(duration, maximum, sourceRange.upperBound - sourceRange.lowerBound)
+        let after = max(sourceRange.lowerBound, min(source, sourceRange.upperBound - width))
+        return try Self(after: after, before: after + width,
             startTimestamp: source, quality: quality, maximum: maximum)
+    }
+    public static func continuation(sourceRange: ClosedRange<Double>, after anchor: Double,
+                                    maximum: Double, quality: RecordedHTTPQuality) throws -> Self {
+        guard anchor >= sourceRange.lowerBound, anchor < sourceRange.upperBound else { throw RecordedHTTPError.gap }
+        return try Self(after: anchor, before: min(sourceRange.upperBound, anchor + min(20, maximum)),
+            startTimestamp: anchor, quality: quality, maximum: maximum)
     }
 }
 
 public struct RecordedHTTPWindow: Codable, Sendable {
-    public enum State: String, Codable, Sendable { case preparing, ready, failed, cleanupPending = "cleanup_pending" }
+    public enum State: String, Codable, Sendable { case preparing, ready, empty, failed, cleanupPending = "cleanup_pending" }
+    public let version: Int
     public let sessionID: String
     public let camera: String
     public let state: State
@@ -164,20 +185,34 @@ public struct RecordedHTTPWindow: Codable, Sendable {
     public let timeline: [RecordedHTTPSpan]
     public let width: Int?
     public let height: Int?
+    public let after: Double
+    public let before: Double
+    public let startTimestamp: Double
+    public let effectiveStartTimestamp: Double?
+    public let nextTimestamp: Double
+    public let error: String?
     enum CodingKeys: String, CodingKey {
-        case camera,state,quality,audio,timeline,width,height
+        case version,camera,state,quality,audio,timeline,width,height,after,before,error
         case sessionID = "session_id", statusURL = "status_url", closeURL = "close_url", mediaURL = "media_url"
         case hardExpiresAt = "hard_expires_at"
+        case startTimestamp = "start_timestamp", effectiveStartTimestamp = "effective_start_timestamp", nextTimestamp = "next_timestamp"
     }
     public init(sessionID: String, camera: String, state: State, quality: RecordedHTTPQuality, audio: Bool,
                 statusURL: URL, closeURL: URL, mediaURL: URL?, hardExpiresAt: Double, timeline: [RecordedHTTPSpan],
-                width: Int? = nil, height: Int? = nil) {
+                after: Double, before: Double, startTimestamp: Double, effectiveStartTimestamp: Double?,
+                nextTimestamp: Double, width: Int? = nil, height: Int? = nil, error: String? = nil) {
+        version = 1
         self.sessionID=sessionID; self.camera=camera; self.state=state; self.quality=quality; self.audio=audio
         self.statusURL=statusURL; self.closeURL=closeURL; self.mediaURL=mediaURL; self.hardExpiresAt=hardExpiresAt
         self.timeline=timeline; self.width=width; self.height=height
+        self.after=after; self.before=before; self.startTimestamp=startTimestamp
+        self.effectiveStartTimestamp=effectiveStartTimestamp; self.nextTimestamp=nextTimestamp; self.error=error
     }
     public func validate(policy: RecordedHTTPResourcePolicy, camera: String, now: Double) throws {
-        guard self.camera == camera, NativeNotificationRoute.isValidIdentifier(sessionID) else { throw RecordedHTTPError.invalidWindow }
+        guard version == 1, self.camera == camera, NativeNotificationRoute.isValidIdentifier(sessionID),
+              [after,before,startTimestamp,nextTimestamp].allSatisfy(\.isFinite),
+              after >= 0, (0.1...30).contains(before - after), startTimestamp >= after,
+              startTimestamp < before, nextTimestamp == before else { throw RecordedHTTPError.invalidWindow }
         guard hardExpiresAt.isFinite, hardExpiresAt > now else { throw RecordedHTTPError.expired }
         _ = try policy.validate(statusURL); _ = try policy.validate(closeURL)
         if let mediaURL { _ = try policy.validate(mediaURL) }
@@ -185,13 +220,23 @@ public struct RecordedHTTPWindow: Codable, Sendable {
             guard mediaURL != nil,
                   width.map({ $0 > 0 }) ?? true, height.map({ $0 > 0 }) ?? true else { throw RecordedHTTPError.invalidWindow }
             _ = try RecordedHTTPMapping(spans: timeline)
+            guard let effectiveStartTimestamp, effectiveStartTimestamp.isFinite,
+                  effectiveStartTimestamp >= startTimestamp, effectiveStartTimestamp < before,
+                  try RecordedHTTPMapping(spans: timeline).mediaTime(for: effectiveStartTimestamp) != nil else {
+                throw RecordedHTTPError.invalidWindow
+            }
+        }
+        if state == .empty {
+            guard timeline.isEmpty, effectiveStartTimestamp == nil else { throw RecordedHTTPError.invalidWindow }
         }
     }
     public func resolved(policy: RecordedHTTPResourcePolicy) throws -> Self {
         Self(sessionID: sessionID, camera: camera, state: state, quality: quality, audio: audio,
             statusURL: try policy.resolve(statusURL.relativeString), closeURL: try policy.resolve(closeURL.relativeString),
             mediaURL: try mediaURL.map { try policy.resolve($0.relativeString) }, hardExpiresAt: hardExpiresAt,
-            timeline: timeline, width: width, height: height)
+            timeline: timeline, after: after, before: before, startTimestamp: startTimestamp,
+            effectiveStartTimestamp: effectiveStartTimestamp, nextTimestamp: nextTimestamp,
+            width: width, height: height, error: error)
     }
 }
 
@@ -252,6 +297,7 @@ public protocol RecordedHTTPTransport: Sendable {
     func status(window: RecordedHTTPWindow) async throws -> RecordedHTTPWindow
     func mediaInfo(window: RecordedHTTPWindow) async throws -> RecordedHTTPMediaInfo
     func close(window: RecordedHTTPWindow) async throws
+    func resolve(camera: String, request: RecordedHTTPResolveRequest) async throws -> RecordedHTTPResolution
 }
 
 public struct UnavailableRecordedHTTPTransport: RecordedHTTPTransport {
@@ -264,6 +310,7 @@ public struct UnavailableRecordedHTTPTransport: RecordedHTTPTransport {
     public func status(window: RecordedHTTPWindow) async throws -> RecordedHTTPWindow { throw RecordedHTTPError.unavailable }
     public func mediaInfo(window: RecordedHTTPWindow) async throws -> RecordedHTTPMediaInfo { throw RecordedHTTPError.unavailable }
     public func close(window: RecordedHTTPWindow) async throws { throw RecordedHTTPError.unavailable }
+    public func resolve(camera: String, request: RecordedHTTPResolveRequest) async throws -> RecordedHTTPResolution { throw RecordedHTTPError.unavailable }
 }
 
 public struct PreparedRecordedHTTPWindow: Sendable {
@@ -272,6 +319,7 @@ public struct PreparedRecordedHTTPWindow: Sendable {
     public let info: RecordedHTTPMediaInfo
     public let request: RecordedHTTPWindowRequest
     public let playingIntent: Bool
+    public let preparationSeconds: Double
     public func seekDecision(at source: Double) -> RecordedHTTPSeekDecision {
         if let time = mapping.mediaTime(for: source) { return .native(mediaTime: time) }
         if !source.isFinite || (source >= request.after && source < request.before) { return .gap }
@@ -281,6 +329,17 @@ public struct PreparedRecordedHTTPWindow: Sendable {
 
 public enum RecordedHTTPSeekDecision: Equatable, Sendable {
     case native(mediaTime: Double), gap, replacement
+}
+
+public enum RecordedHTTPContinuationPolicy {
+    public static func leadSeconds(preparationSeconds: Double, windowSeconds: Double,
+                                   nextWindowSeconds: Double, playbackRate: Double) throws -> Double {
+        guard [preparationSeconds,windowSeconds,nextWindowSeconds,playbackRate].allSatisfy(\.isFinite),
+              preparationSeconds >= 0, windowSeconds > 0, nextWindowSeconds > 0, playbackRate > 0 else {
+            throw RecordedHTTPError.invalidWindow
+        }
+        return (preparationSeconds * nextWindowSeconds / windowSeconds + 2) * playbackRate
+    }
 }
 
 public actor RecordedHTTPWindowManager {
@@ -308,6 +367,7 @@ public actor RecordedHTTPWindowManager {
             _ = await previous?.result
             try await cleanup?.value
             try Task.checkCancellation()
+            let started = ProcessInfo.processInfo.systemUptime
             if let old { try await self.closeOwned(old.window) }
             try await self.drainCleanup()
             let policy = try RecordedHTTPResourcePolicy(address: transport.address)
@@ -321,22 +381,32 @@ public actor RecordedHTTPWindowManager {
             var window: RecordedHTTPWindow
             do { window = try await creation.value }
             catch {
-                if ![401,403,422,429].contains((error as? HorizonError)?.httpStatusCode ?? 0) {
+                let local = error as? RecordedHTTPError
+                let noCreation: Bool
+                switch local {
+                case .rejectedCreation?, .unsupportedSource?, .invalidContract?: noCreation = true
+                default: noCreation = false
+                }
+                if !noCreation, ![401,403,422,429].contains((error as? HorizonError)?.httpStatusCode ?? 0) {
                     await self.quarantineCreation()
                 }
                 throw error
             }
             do {
                 window = try window.resolved(policy: policy)
-                for attempt in 0..<30 {
+                for attempt in 0..<45 {
                     try Task.checkCancellation()
                     try window.validate(policy: policy, camera: selection.camera, now: Date().timeIntervalSince1970)
                     if window.state == .ready { break }
+                    if window.state == .empty { throw RecordedHTTPError.emptyWindow(nextTimestamp: window.nextTimestamp) }
                     guard window.state == .preparing else { throw RecordedHTTPError.preparationFailed }
                     try await Task.sleep(for: .seconds(min(1, 0.1 * Double(attempt + 1))))
                     let next = try await transport.status(window: window).resolved(policy: policy)
                     guard next.sessionID == window.sessionID, next.closeURL == window.closeURL,
-                          next.statusURL == window.statusURL else { throw RecordedHTTPError.invalidWindow }
+                          next.statusURL == window.statusURL, next.after == request.after, next.before == request.before,
+                          next.startTimestamp == request.startTimestamp, next.nextTimestamp == request.before else {
+                        throw RecordedHTTPError.invalidWindow
+                    }
                     window = try next.resolved(policy: policy)
                 }
                 guard window.state == .ready else { throw RecordedHTTPError.preparationFailed }
@@ -345,13 +415,15 @@ public actor RecordedHTTPWindowManager {
                 let info = try await transport.mediaInfo(window: window)
                 try info.validate()
                 let mapping = try RecordedHTTPMapping(spans: window.timeline)
-                guard mapping.spans.allSatisfy({ $0.sourceStart >= request.after && $0.sourceEnd <= request.before }) else {
+                guard window.after == request.after, window.before == request.before, window.startTimestamp == request.startTimestamp,
+                      mapping.spans.allSatisfy({ $0.sourceEnd <= request.before + 0.000001 }) else {
                     throw RecordedHTTPError.invalidWindow
                 }
-                guard mapping.mediaTime(for: request.startTimestamp) != nil else { throw RecordedHTTPError.gap }
+                guard let effective = window.effectiveStartTimestamp, mapping.mediaTime(for: effective) != nil else { throw RecordedHTTPError.gap }
                 try Task.checkCancellation()
                 return PreparedRecordedHTTPWindow(window: window, mapping: mapping, info: info,
-                    request: request, playingIntent: playing)
+                    request: request, playingIntent: playing,
+                    preparationSeconds: ProcessInfo.processInfo.systemUptime - started)
             } catch {
                 try await self.closeOwned(window)
                 throw error

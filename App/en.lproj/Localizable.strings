@@ -1,6 +1,6 @@
 "viewer.upgrade" = "This server needs the native WebRTC viewing upgrade. No alternate player will be started.";
 "viewer.unavailable" = "WebRTC viewing is disabled or unavailable. Check server readiness and retry.";
-"viewer.recorded" = "Recorded HTTPS MP4 review requires the finalized server discovery and range contract. Original downloads remain available.";
+"viewer.recorded" = "Recorded HTTP viewing is disabled or unavailable for this camera. Check server readiness and retry. Original downloads remain available.";
 "viewer.recordedTitle" = "Recorded HTTP review unavailable";
 "viewer.invalid" = "The server returned an invalid or out-of-scope viewing session.";
 "viewer.expired" = "The viewing lease expired. Reconnect to create a new owned viewer.";
@@ -19,7 +19,7 @@
 "viewer.connecting" = "Connecting WebRTC";
 "viewer.recovering" = "Recreating owned WebRTC viewer";
 "viewer.live" = "Live WebRTC";
-"review.httpUnavailable" = "Recorded HTTPS MP4 review requires the finalized server discovery and range contract. Original downloads remain available.";
+"review.httpUnavailable" = "Recorded HTTP viewing is disabled or unavailable for this camera. Check server readiness and retry. Original downloads remain available.";
 "review.invalidContract" = "The server did not provide a supported, qualified recorded HTTP contract.";
 "review.invalidWindow" = "The recorded window or source/media timeline is invalid.";
 "review.gap" = "No recorded footage maps to this position. Choose another recorded span.";
@@ -42,3 +42,8 @@
 "review.metricBasis" = "Startup times begin at the recorded window intent; seeks begin at native seek dispatch. Decoded video-output frames are measured, not display or device certification.";
 "review.networkFailure" = "Recorded HTTPS playback failed. Check server/range readiness and retry.";
 "review.pipFailed" = "Recorded Picture in Picture could not start. Wait for decoded video and try again.";
+"review.empty" = "This prepared window has no playable frame. Looking for the next usable frame.";
+"review.searchLimit" = "The bounded frame search reached its limit. This does not prove footage is missing. Advance the timeline and try again.";
+"review.unsupportedSource" = "The server's recorded HTTP API supports camera recording ranges, not this media source. Original downloads remain available.";
+"review.nextFrame" = "Playback advanced to the next actual recorded frame.";
+"review.continuationFailed" = "The upcoming window could not be prepared; current playback is unchanged.";

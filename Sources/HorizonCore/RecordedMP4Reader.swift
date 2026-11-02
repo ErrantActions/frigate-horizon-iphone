@@ -156,11 +156,16 @@ public final class AuthenticatedRecordedMP4Reader: @unchecked Sendable {
     private let session: URLSession
     private let delegate: MP4ReadDelegate
     private let cookieStore: MP4Cookies
-    public init(mediaURL: URL, info: RecordedHTTPMediaInfo, policy: RecordedHTTPResourcePolicy,
+    public convenience init(mediaURL: URL, info: RecordedHTTPMediaInfo, policy: RecordedHTTPResourcePolicy,
+                cookies: [HTTPCookie], configuration: URLSessionConfiguration = .ephemeral) throws {
+        try info.validate()
+        try self.init(mediaURL: mediaURL, verificationLength: info.length, policy: policy, cookies: cookies, configuration: configuration)
+    }
+    public init(mediaURL: URL, verificationLength: Int64, policy: RecordedHTTPResourcePolicy,
                 cookies: [HTTPCookie], configuration: URLSessionConfiguration = .ephemeral) throws {
         self.mediaURL = try policy.validate(mediaURL)
-        try info.validate()
-        length = info.length
+        guard verificationLength > 0 else { throw RecordedHTTPError.rangeUnsupported }
+        length = verificationLength
         let cookieStore = MP4Cookies(cookies, address: policy.address)
         self.cookieStore = cookieStore
         delegate = MP4ReadDelegate(cookies: cookieStore)
