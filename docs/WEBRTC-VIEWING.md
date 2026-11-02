@@ -79,8 +79,36 @@ not "server rejected". Auth 401/403 handling and bounded recovery are unchanged.
 201 creation still follows the server-offer/client-answer flow, not WHEP.
 
 Exact JSON, nonnull grid cap, default detail/4K intent, validation-array/
-redaction/proxy regressions accompany the repair. Native qualification results
-will be recorded after the build. TestFlight 1035 remains the delivered binary
+redaction/proxy regressions accompany the repair. Source **`714a9c8`** passed
+[unsigned qualification 41374589104](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41374589104):
+
+| Exact check | Result |
+| --- | --- |
+| `swift test` | **379 tests, 0 failures** |
+| `python3 -m unittest discover -s tools/tests` | **69 committed guards passed** |
+| `python -m unittest discover -s tools\tests -p test_webrtc_viewing.py` | **20 focused guards passed** |
+| Generic iOS-device Release `CODE_SIGNING_ALLOWED=NO build` | **BUILD SUCCEEDED** |
+| Published-model reproduction of old null cap / valid five-field bodies | Expected rejection/acceptance |
+| Real iPhone / authenticated server 201 and decoded playback after this fix | Not run |
+
+```sh
+xcodebuild -project FrigateHorizon.xcodeproj -scheme FrigateHorizon \
+  -configuration Release -destination 'generic/platform=iOS' \
+  -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO build
+```
+
+Changed surfaces: [WebRTCViewing.swift](../Sources/HorizonCore/WebRTCViewing.swift)
+for typed payload/default ceiling and detail-preserving messages;
+[ViewerValidationResponse.swift](../Sources/HorizonCore/ViewerValidationResponse.swift)
+for safe response parsing; [HorizonAPI.swift](../App/Networking/HorizonAPI.swift)
+for the buffered viewer-response hook; and
+[OwnedWebRTCViewer.swift](../App/Media/OwnedWebRTCViewer.swift) for per-attempt
+sanitized failure diagnostics. Related localization and regressions changed.
+An initial compile caught the hook placed in streaming-log code; it was moved
+to the correct buffered response scope and unrelated log streaming restored.
+No server/router settings, notifications, accounts or original downloads changed.
+
+TestFlight 1035 remains the delivered binary
 until a separately authorized native upload; the integration prompt still
 prohibits server/router deployment from this fix workstream.
 
