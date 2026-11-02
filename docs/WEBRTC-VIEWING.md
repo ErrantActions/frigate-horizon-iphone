@@ -123,9 +123,9 @@ An initial compile caught the hook placed in streaming-log code; it was moved
 to the correct buffered response scope and unrelated log streaming restored.
 No server/router settings, notifications, accounts or original downloads changed.
 
-TestFlight 1035 remains the delivered binary
-until a separately authorized native upload; the integration prompt still
-prohibits server/router deployment from this fix workstream.
+The owner's later explicit TestFlight request authorized native build **1036**,
+which now contains this repair and the direct-original changes. The integration
+prompt still prohibits server/router deployment from this fix workstream.
 
 - Authenticated `native/features` discovery requires live version 1,
   enabled/available and `{camera_name}/live/webrtc/status`. Optional legacy
@@ -160,7 +160,19 @@ Normal TLS/ATS, API cookies/write CSRF, audio/mute and fold-aware layout remain.
 Notification renewal preserves the installation's actual camera selection,
 including `camera_ids: []`, confidence policy and private photo behavior.
 
-## Current delivered binary: TestFlight 1035
+## Current delivered binary: TestFlight 1036
+
+After the owner's explicit "push the testflight", source `c2a9e20` shipped in
+[release 41391343545](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41391343545):
+386 Core tests, 72 guards, full signed app/NSE archive/export/upload passed.
+Apple build `bb1d1054-20b9-4def-9c9c-46297f8f5813` is VALID,
+`usesNonExemptEncryption=false`, IN_BETA_TESTING and included in Owner Testing
+Auto. This includes the live 422 request/detail repair and negotiated closed
+direct-original playback. Server settings, notification subscriptions and
+image readiness remain unchanged. No test pushes, simulator/UI tests or
+external beta submission occurred. Physical-device success remains unverified.
+
+## Previous delivered binary: TestFlight 1035
 
 After an explicit owner request, source `8e4aeef` shipped in
 [release 41368787708](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41368787708):
@@ -173,7 +185,7 @@ is not implied by Apple processing.
 
 ## Historical delivered binary
 
-TestFlight **1034**, source `7bb4ab9`, remains the latest uploaded binary:
+TestFlight **1034**, source `7bb4ab9`, was the preceding WebRTC-only binary:
 [release 41290042530](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41290042530).
 It passed 336 Core tests, 61 CI guards, app/NSE signing, archive/export/upload.
 Apple build `6c282cfd-8b0c-478a-a664-235b58b42fdc` was `VALID`,

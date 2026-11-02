@@ -2,8 +2,8 @@
 
 **Current source: live WebRTC plus capability-gated recorded HTTPS MP4
 architecture.** The owner subsequently explicitly requested TestFlight;
-**1035** is now uploaded, processed and available to Owner Testing Auto, with
-the deployed HTTP-v1 client. That authorization is for the native release,
+**1036** is now uploaded, processed and available to Owner Testing Auto, with
+the live 422 repair and direct-original HTTP client. That authorization is for the native release,
 not server deployment or test pushes. The earlier HLS sections are historical.
 Live and recorded HTTP are
 owner-reported deployed; the current source wires authenticated recorded-v1
@@ -11,19 +11,25 @@ discovery/ranges, while physical iPhone qualification remains unverified. Do not
 revive HLS, recorded WebRTC or download-URL streaming as a fallback. See
 [WEBRTC-VIEWING.md](WEBRTC-VIEWING.md) for implementation, exact checks and blockers.
 
-## Latest verified release: 1035
+## Latest verified release: 1036
 
-[Run 41368787708](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41368787708),
-job `125034563349`, source `8e4aeefb07da3c48579b488ed5fb7a63d768704b`,
-selected build **1035**. It passed **372 Core tests**, **67 guards**,
+[Run 41391343545](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41391343545),
+job `125103650000`, source `c2a9e208f8479d475b293816efb582c172404d3c`,
+selected build **1036**. It passed **386 Core tests**, **72 guards**,
 both app/NSE Release compilation and distribution signing, archive, export
 and upload. No simulator/UI tests/previews were run.
 
-Apple build `ee7e8ab8-e189-46be-92cd-46b78ed2a2e3` is **VALID**,
+Apple build `bb1d1054-20b9-4def-9c9c-46297f8f5813` is **VALID**,
 `usesNonExemptEncryption=false`, **IN_BETA_TESTING**, and included in
 **Owner Testing Auto** (`2e555dfe-174b-42b5-8b03-83519d7f2fd9`). External
 tester groups/submission were not changed. Processing and group membership
 were verified read-only through App Store Connect.
+
+This includes the nonnull grid `max_height`/exact five-field creation fix,
+sanitized validation details, observed live HTTP/heartbeat diagnostics and
+OpenAPI-negotiated direct-original MP4 delivery with tail-index support.
+TestFlight availability does not certify physical live 201/answer 204/decoded
+frames, recorded latency/audio/PiP, or WAN/TURN-TLS.
 
 ```powershell
 gh workflow run testflight.yml --repo ErrantActions/frigate-horizon-iphone --ref main `

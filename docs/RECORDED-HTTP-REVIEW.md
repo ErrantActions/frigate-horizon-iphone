@@ -268,11 +268,20 @@ Changed surfaces:
   and safe explicit CSRF 403 handling.
 - Related localization, fixtures, source guards and viewing documentation.
 
-The current source is pushed but **not uploaded to TestFlight**. Build 1035
-does not contain either the later live 422 repair or direct-original changes.
-No native/backend deployment, TURN/DNS/router/server/provider change, test
-notification or original-recording/download mutation occurred. Real-device
-and authorized native-production evidence remain unavailable in this workstream.
+The owner subsequently explicitly requested TestFlight. **1036** now contains
+the live 422 repair and direct-original client:
+[release 41391343545](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41391343545),
+source `c2a9e20`, job `125103650000`; 386 Core/72 guards and full signed app/NSE
+archive/export/upload passed. Apple build
+`bb1d1054-20b9-4def-9c9c-46297f8f5813` is VALID,
+`usesNonExemptEncryption=false`, IN_BETA_TESTING and included in Owner Testing
+Auto. Read-only Apple processing/group verification succeeded.
+
+This authorization covers the native beta only. No backend deployment,
+TURN/DNS/router/server/provider change, test notification, simulator/UI test
+or original-recording/download mutation occurred. Image readiness remains
+false with the same timestamp; real-device and authorized native-production
+evidence remain unavailable in this workstream.
 
 On a real iPhone with the deployed server: authenticated MP4 HEAD/ranges and
 206/416, cold/warm tap-to-frame and seek latency, repeated in-window seeks,
