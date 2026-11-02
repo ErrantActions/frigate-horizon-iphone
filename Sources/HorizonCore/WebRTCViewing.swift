@@ -118,11 +118,11 @@ public struct ViewerConfiguration: Equatable, Sendable {
     public func creation(status: LiveWebRTCStatus) throws -> ViewerCreateBody {
         guard !forceRelay || status.relayAvailable else { throw HorizonError.message(ViewingMessage.unavailable) }
         if grid {
-            return ViewerCreateBody(view: "grid", height: status.gridHeight, maxHeight: nil, audio: false, forceRelay: forceRelay)
+            return ViewerCreateBody(view: "grid", height: status.gridHeight, maxHeight: 1080, audio: false, forceRelay: forceRelay)
         }
         let detail = Set(status.renditions.map(\.height).filter { $0 >= 720 })
         guard !detail.isEmpty else { throw HorizonError.message(ViewingMessage.unavailable) }
-        let cap = dataSaver ? 720 : (maximumHeight ?? detail.max()!)
+        let cap = dataSaver ? 720 : (maximumHeight ?? max(1080, exactHeight ?? 0))
         guard [720,1080,2160].contains(cap), detail.contains(where: { $0 <= cap }),
               maximumHeight.map({ [720,1080,2160].contains($0) }) ?? true else {
             throw HorizonError.message(ViewingMessage.invalid)
@@ -138,7 +138,7 @@ public struct ViewerConfiguration: Equatable, Sendable {
 public struct ViewerCreateBody: Encodable, Sendable {
     public let view: String
     public let height: Int?
-    public let maxHeight: Int?
+    public let maxHeight: Int
     public let audio: Bool
     public let forceRelay: Bool
     enum CodingKeys: String, CodingKey { case view, height, audio; case maxHeight = "max_height"; case forceRelay = "force_relay" }
@@ -367,7 +367,9 @@ public func viewingFailureMessage(_ error: Error) -> String {
     case 404: return String(localized: "viewer.missing", defaultValue: "The owned viewer or requested quality is no longer available. Refresh and retry.")
     case 409: return String(localized: "viewer.conflict", defaultValue: "The viewing session is in a conflicting negotiation state. Reconnect.")
     case 410: return ViewingMessage.expired
-    case 422: return String(localized: "viewer.payload", defaultValue: "The server rejected the viewing request. Update the app/server contract.")
+    case 422:
+        if let failure = error as? HorizonError, case .server = failure { return failure.localizedDescription }
+        return String(localized: "viewer.payload", defaultValue: "HTTP 422: The live viewing request failed validation. Response details are unavailable. Update the app/server contract.")
     case 429: return String(localized: "viewer.capacity", defaultValue: "The server's shared viewing/encoder capacity is in use. Close another viewer before retrying.")
     case 503: return ViewingMessage.unavailable
     default:

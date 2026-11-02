@@ -87,6 +87,7 @@ final class WebRTCViewingTests: XCTestCase {
         XCTAssertEqual(body.view, "grid"); XCTAssertEqual(body.height, 360)
         XCTAssertFalse(body.audio); XCTAssertFalse(body.forceRelay)
         XCTAssertNil(config.exactHeight); XCTAssertNil(config.maximumHeight)
+        XCTAssertEqual(body.maxHeight, 1080)
     }
 
     func testDetailAutoAndDataSaverNeverSelectGridOnlyRung() throws {
@@ -103,6 +104,32 @@ final class WebRTCViewingTests: XCTestCase {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any])
         XCTAssertTrue(object["height"] is NSNull)
         XCTAssertEqual(object["max_height"] as? Int, 1080)
+        XCTAssertEqual(Set(object.keys), Set(["view","height","max_height","audio","force_relay"]))
+        XCTAssertEqual(object["view"] as? String, "detail")
+        XCTAssertEqual(object["audio"] as? Bool, true)
+        XCTAssertEqual(object["force_relay"] as? Bool, false)
+    }
+    func testGridWireBodyHasNonNullLiteralCapAndExactlyTheDeployedFiveKeys() throws {
+        let body = try ViewerConfiguration(grid: true, maximumHeight: 2160, exactHeight: 2160, audio: true).creation(status: status())
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any])
+        XCTAssertEqual(Set(object.keys), Set(["view","height","max_height","audio","force_relay"]))
+        XCTAssertEqual(object["view"] as? String, "grid")
+        XCTAssertEqual(object["height"] as? Int, 360)
+        XCTAssertEqual(object["max_height"] as? Int, 1080)
+        XCTAssertEqual(object["audio"] as? Bool, false)
+        XCTAssertFalse(object["max_height"] is NSNull)
+    }
+    func testDefaultDetailMatches1080ExampleEvenWhenStatusAdvertisesNative4K() throws {
+        let status = try decode(LiveWebRTCStatus.self, [
+            "version":1,"protocol":"webrtc","enabled":true,"available":true,
+            "session_url":"front/live/webrtc/sessions","grid_height":360,
+            "grid_rendition":["height":360,"bitrate":500],"relay_available":true,
+            "renditions":[["height":360,"bitrate":500],["height":720,"bitrate":1200],
+                ["height":1080,"bitrate":2500],["height":2160,"bitrate":8000]]])
+        let auto = try ViewerConfiguration(grid: false).creation(status: status)
+        XCTAssertNil(auto.height); XCTAssertEqual(auto.maxHeight, 1080)
+        let pinned = try ViewerConfiguration(grid: false, exactHeight: 2160).creation(status: status)
+        XCTAssertEqual(pinned.height, 2160); XCTAssertEqual(pinned.maxHeight, 2160)
     }
 
     func testSessionValidatesAllOwnedResourcesAndCurrentLease() throws {

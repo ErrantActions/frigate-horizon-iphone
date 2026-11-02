@@ -165,6 +165,28 @@ class TestWebRTCViewing(unittest.TestCase):
         self.assertIn("address.hasSameOrigin(as: url)", api)
         self.assertNotIn("serverTrust", api)
 
+    def test_live_creation_uses_nonnullable_cap_and_does_not_add_protocol_fields(self):
+        core = source("Sources/HorizonCore/WebRTCViewing.swift")
+        self.assertTrue('view: "grid", height: status.gridHeight, maxHeight: 1080, audio: false' in core)
+        body = core.split("public struct ViewerCreateBody:")[1].split("public struct ViewerResourcePolicy")[0]
+        self.assertTrue("public let maxHeight: Int\n" in body)
+        self.assertTrue("case version" not in body)
+        self.assertTrue("case protocol" not in body)
+        self.assertTrue("case stream" not in body)
+
+    def test_422_validation_detail_is_preserved_through_network_ui_and_diagnostics(self):
+        api = source("App/Networking/HorizonAPI.swift")
+        core = source("Sources/HorizonCore/WebRTCViewing.swift")
+        parser = source("Sources/HorizonCore/ViewerValidationResponse.swift")
+        peer = source("App/Media/OwnedWebRTCViewer.swift")
+        self.assertTrue("viewerRequest && response.statusCode == 422" in api)
+        self.assertTrue("ViewerValidationResponse.detail(data: bytes, mimeType: response.mimeType)" in api)
+        self.assertTrue("case .server = failure { return failure.localizedDescription }" in core)
+        self.assertTrue('let loc: [Location]' in parser)
+        self.assertTrue("let input:" not in parser)
+        self.assertTrue("let ctx:" not in parser)
+        self.assertTrue('httpStatusCode == 422 { metrics +=' in peer)
+
     def test_sdk_pin_and_localized_messages_are_present(self):
         self.assertIn("exactVersion: 156.0.0", source("project.yml"))
         strings = source("App/en.lproj/Localizable.strings")

@@ -138,6 +138,7 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
         lastFailure = nil
         startUptime = ProcessInfo.processInfo.systemUptime
         firstFrame = nil
+        metrics = ""
         let token = generation
         observeFrames(token: token)
         status = String(localized: "viewer.discovering", defaultValue: "Checking WebRTC viewing support")
@@ -397,6 +398,7 @@ final class OwnedWebRTCViewer: NSObject, ObservableObject {
 
     private func fail(_ failure: Error) {
         let message = viewingFailureMessage(failure)
+        if (failure as? HorizonError)?.httpStatusCode == 422 { metrics += "\n\(message)" }
         let auth = (failure as? HorizonError)?.httpStatusCode == 401
         let network = failure as? URLError
         let knownSessionNetworkFailure = owner != nil &&

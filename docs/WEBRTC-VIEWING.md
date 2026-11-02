@@ -42,6 +42,48 @@ the native 1035 release recorded below. Server deployment remains out of scope.
 
 ## Live implementation retained
 
+### Native HTTP 422 repair after build 1035
+
+The native body already had exactly five keys, but grid creation encoded
+`max_height: null`. The pinned deployed
+[ViewerBody model](https://github.com/ErrantActions/Frigate-Horizon/blob/7def9a838805a38e4f48c30ad6024bc0ca2c2145/frigate/comms/live_webrtc.py)
+declares nonnullable `max_height: Literal[720,1080,2160] = 1080`.
+An isolated validation of the exact previous grid payload reproduced:
+
+```text
+max_height: Input should be 720, 1080 or 2160 (literal_error)
+```
+
+This is local published-model evidence, not a captured response from the
+owner's phone. The response JSON/detail has not been supplied to this session.
+The working backend/router were not contacted or changed.
+
+`ViewerCreateBody.maxHeight` is now nonoptional. Grid sends the discovered grid
+height, `max_height: 1080`, audio false and no extra fields; that cap does not
+cause a detail rendition to be decoded by the grid. Default detail matches:
+
+```json
+{"view":"detail","height":null,"max_height":1080,"audio":true,"force_relay":false}
+```
+
+Explicit supported detail caps/pins and Data Saver remain; 4K is still an
+explicit advertised choice, not the default Auto ceiling. Version/protocol/
+stream/session metadata never enters the creation body.
+
+The API now reads structured 422 `detail` arrays and preserves bounded
+location/message/type information through `HorizonError.server`, the viewer UI
+and copied diagnostics. `input` and `ctx` are never decoded/displayed; sensitive
+locations, SDP/ICE/credentials/tokens/URLs/source paths are redacted. Text/HTML/
+malformed responses have explicit safe detail or an unavailable-detail message,
+not "server rejected". Auth 401/403 handling and bounded recovery are unchanged.
+201 creation still follows the server-offer/client-answer flow, not WHEP.
+
+Exact JSON, nonnull grid cap, default detail/4K intent, validation-array/
+redaction/proxy regressions accompany the repair. Native qualification results
+will be recorded after the build. TestFlight 1035 remains the delivered binary
+until a separately authorized native upload; the integration prompt still
+prohibits server/router deployment from this fix workstream.
+
 - Authenticated `native/features` discovery requires live version 1,
   enabled/available and `{camera_name}/live/webrtc/status`. Optional legacy
   signaling metadata, if supplied, must agree with REST offer/answer v1;

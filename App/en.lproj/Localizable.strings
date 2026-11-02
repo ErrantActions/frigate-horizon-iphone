@@ -10,7 +10,9 @@
 "viewer.denied" = "Camera access was denied. Refresh permissions or choose another camera.";
 "viewer.missing" = "The owned viewer or requested quality is no longer available. Refresh and retry.";
 "viewer.conflict" = "The viewing session is in a conflicting negotiation state. Reconnect.";
-"viewer.payload" = "The server rejected the viewing request. Update the app/server contract.";
+"viewer.payload" = "HTTP 422: The live viewing request failed validation. Response details are unavailable. Update the app/server contract.";
+"viewer.validationUnavailable" = "The server returned HTTP 422, but its validation detail could not be read. Check the app/server request contract.";
+"viewer.validationRedacted" = "Sensitive validation content was redacted.";
 "viewer.capacity" = "The server's shared viewing/encoder capacity is in use. Close another viewer before retrying.";
 "viewer.cleanup" = "Local playback stopped, but owned viewer deletion is unconfirmed. Its lease is only a safeguard; retry cleanup before assuming server work ended.";
 "viewer.unknownCreation" = "Viewer creation has no confirmed session identity. Cleanup cannot be confirmed; no creation replay was attempted.";
