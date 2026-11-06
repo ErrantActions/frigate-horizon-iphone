@@ -57,6 +57,55 @@ the native 1035 release recorded below. Server deployment remains out of scope.
 
 ## Live implementation retained
 
+### Loaded-camera selection and Review lifecycle repair
+
+Selecting a camera previously deactivated its grid tile and opened a new
+detail view with a separate session/renderer. Grid and detail are different
+server creation envelopes: grid is a low rung with audio false, while detail
+offers its own ladder and audio. The live quality PATCH does not promote a
+grid session into the detail/audio envelope.
+
+The app now pins the selected running grid session **before** showing the
+sheet and renders that existing decoded track as an immediate preview.
+It remains visible beneath detail startup/error controls until a new detail
+frame arrives; then its temporary ownership is released. Dismissal, background,
+permission loss, recordings/tools navigation or a bounded 25-second timeout
+also releases the pin. No extra grid connection or hidden prefetch is created,
+and active Group PiP ownership is not stolen. A detail connection upgrade still
+occurs; this is a no-blank-video handoff, not a claim that the backend can change
+grid/detail mode in place.
+
+The reported Review failure could not be matched to an exact phone error
+(the clarification prompt was unavailable). Source inspection found that the
+recorded view attached ownership callbacks to a `Group` switching between
+loading, unavailable and player branches. That permits content branch lifecycle
+events to release inline playback during a loading-to-ready transition.
+The host is now a stable `ZStack` with a continuously mounted native player
+controller and separate loading/error overlays; content transitions no longer
+own teardown. Real screen departure/background/account cleanup still does.
+
+Review also rebuilds its day/elapsed-time range on reopening, and awaits known
+departing live-viewer cleanup before admitting an MP4 window. Unidentified
+live creation now correctly prevents declaring cleanup drained. Intentional
+PiP viewers are not silently stopped to make room.
+
+Playback diagnostics are now available even after failure clears capability
+controls. They retain the last playback stage, HTTP status, failure domain/code
+and AVPlayer error-log codes, without URLs, cookies, source paths or private
+session material. This makes any remaining device/backend-specific failure
+actionable instead of losing diagnostics when the item stops.
+
+Changed surfaces:
+[LiveCameraHandoff.swift](../App/Media/LiveCameraHandoff.swift),
+[LivePlaybackSession.swift](../App/Media/LivePlaybackSession.swift),
+[LiveView.swift](../App/Views/LiveView.swift),
+[RecordingPlayer.swift](../App/Media/RecordingPlayer.swift),
+[ReviewWorkspaceView.swift](../App/Views/ReviewWorkspaceView.swift),
+and [OwnedWebRTCViewer.swift](../App/Media/OwnedWebRTCViewer.swift), plus related
+localization/tests. Qualification results are recorded after native validation.
+No server settings, recordings/downloads or notification selections changed.
+This source repair is not yet a TestFlight upload.
+
 ### Group Picture in Picture
 
 **TestFlight 1037 is processed and available to Owner Testing Auto.** Open

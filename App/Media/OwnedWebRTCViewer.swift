@@ -55,7 +55,7 @@ final class ViewerCleanupStore: ObservableObject {
             confirmed.append(key)
         }
         if failed.isEmpty && !unidentified { error = nil }
-        return true
+        return !unidentified
     }
     func unidentifiedCreation() {
         unidentified = true

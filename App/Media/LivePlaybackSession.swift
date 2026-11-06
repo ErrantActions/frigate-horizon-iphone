@@ -62,6 +62,13 @@ final class LivePlaybackSession: ObservableObject {
         apiIdentity == ObjectIdentifier(api) && selection.map { allowedCameraIDs.contains($0.cameraID) } == true
     }
     func attach(_ viewer: UUID) { if viewers[viewer] == nil { viewers[viewer] = false } }
+    func retainGridHandoff(_ viewer: UUID, api: HorizonAPI, cameraID: String) -> Bool {
+        guard belongs(to: api, allowedCameraIDs: [cameraID]), selection?.cameraID == cameraID,
+              viewerConfiguration?.grid == true, hasInlineViewer, isRunning,
+              resolution != nil, rtcViewer.videoTrack != nil, error == nil else { return false }
+        viewers[viewer] = true
+        return true
+    }
     func detach(_ viewer: UUID) { viewers.removeValue(forKey: viewer); stopIfNoOwner() }
     func deactivateInlineViewer(_ viewer: UUID) { viewers[viewer] = false; stopIfNoOwner() }
     private func stopIfNoOwner() {

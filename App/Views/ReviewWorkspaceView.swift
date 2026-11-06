@@ -35,8 +35,7 @@ final class ReviewPlaybackStore: ObservableObject {
         metadataErrors = []
         let range: ReviewTimeRange
         do {
-            if let existing = self.range { range = existing }
-            else { range = try ReviewTimeRange(day: day) }
+            range = try ReviewTimeRange(day: day)
             self.range = range
         } catch {
             self.error = error.localizedDescription

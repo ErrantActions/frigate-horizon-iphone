@@ -55,6 +55,8 @@ final class RecordingPlayer: ObservableObject {
               startTimestamp: Double? = nil, autoplay: Bool = true) {
         stop()
         notice = nil
+        metrics = RecordedPlaybackMetrics()
+        metrics.stage = "native-decoder-discovery"
         let intentStart = ProcessInfo.processInfo.systemUptime
         self.api = api; self.selection = selection
         let transport: any RecordedHTTPTransport
@@ -68,8 +70,10 @@ final class RecordingPlayer: ObservableObject {
         let token = generation
         task = Task {
             do {
+                metrics.stage = "owned-window-cleanup"
                 try await RecordedViewingRegistry.awaitCleanup()
                 try Task.checkCancellation()
+                metrics.stage = "HTTP-discovery"
                 let caps = try await transport.discover(camera: selection.camera)
                 try caps.validate()
                 let bounds: ClosedRange<Double>
@@ -137,6 +141,12 @@ final class RecordingPlayer: ObservableObject {
             do {
                 // Coalesce scrub/quality intents; the manager serializes dispatched creation and late cleanup.
                 try await Task.sleep(for: .milliseconds(150))
+                metrics.stage = "live-viewer-cleanup"
+                guard await ViewerCleanupStore.shared.drain(using: api) else {
+                    throw HorizonError.message(String(localized: "review.liveCleanupPending", defaultValue: "Previous live viewer cleanup is unconfirmed. Retry viewer cleanup before starting recorded playback."))
+                }
+                try Task.checkCancellation()
+                metrics.stage = "window-preparation-and-range-validation"
                 let ready = try await prepareResolved(manager: manager, selection: selection, request: request, playing: autoplay)
                 guard generation == token, !Task.isCancelled else { return }
                 try install(ready)
@@ -166,6 +176,7 @@ final class RecordingPlayer: ObservableObject {
     }
 
     private func install(_ ready: PreparedRecordedHTTPWindow) throws {
+        metrics.stage = "native-asset-installation"
         guard let api, let url = ready.window.mediaURL else { throw RecordedHTTPError.invalidWindow }
         try ready.window.validate(policy: RecordedHTTPResourcePolicy(address: api.address),
             camera: ready.window.camera, now: Date().timeIntervalSince1970)
@@ -204,6 +215,7 @@ final class RecordingPlayer: ObservableObject {
         try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try AVAudioSession.sharedInstance().setActive(true)
         player.replaceCurrentItem(with: item)
+        metrics.stage = "player-readiness"
         observe(item, token: token)
         lease = Task {
             while !Task.isCancelled {
@@ -361,6 +373,7 @@ final class RecordingPlayer: ObservableObject {
                    output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) != nil {
                     let now = ProcessInfo.processInfo.systemUptime
                     if self.metrics.firstDecodedSeconds == nil { self.metrics.firstDecodedSeconds = now - self.attemptStart }
+                    self.metrics.stage = "decoded-playback"
                     if let start = self.seekStart { self.metrics.seekDecodedSeconds = now - start; self.seekStart = nil }
                 }
                 self.maybePrepareUpcoming(time: time.seconds, runEnd: item.forwardPlaybackEndTime.seconds)
@@ -398,6 +411,7 @@ final class RecordingPlayer: ObservableObject {
         seekGeneration = UUID(); let token = seekGeneration; let owner = mediaGeneration
         wantsToPlay = autoplay; transition = true; isSeeking = true; error = nil
         seekStart = ProcessInfo.processInfo.systemUptime
+        metrics.stage = "native-seek"
         item.cancelPendingSeeks()
         player.pause()
         item.forwardPlaybackEndTime = CMTime(seconds: end, preferredTimescale: 600)
@@ -442,11 +456,21 @@ final class RecordingPlayer: ObservableObject {
         output = nil; media?.cancel(); media = nil; prepared = nil
     }
     private func fail(_ failure: Error) {
+        let native = failure as NSError
+        metrics.failureDomain = native.domain
+        metrics.failureCode = native.code
+        metrics.httpStatus = (failure as? HorizonError)?.httpStatusCode
+        if let log = player.currentItem?.errorLog()?.events { metrics.errorCodes = log.map(\.errorStatusCode) }
         if let horizon = failure as? HorizonError {
             switch horizon.httpStatusCode {
             case 401,403,422,429: error = viewingFailureMessage(horizon)
             case 404,410: error = RecordedHTTPError.expired.localizedDescription
-            default: error = String(localized: "review.networkFailure", defaultValue: "Recorded HTTPS playback failed. Check server/range readiness and retry.")
+            default:
+                if case .message(let message) = horizon { error = message }
+                else {
+                    error = String(localized: "review.networkFailure", defaultValue: "Recorded HTTPS playback failed. Check server/range readiness and retry.")
+                    if let status = horizon.httpStatusCode { error = (error ?? "") + " HTTP \(status)." }
+                }
             }
         } else { error = failure.localizedDescription }
         if (failure as? HorizonError)?.httpStatusCode == 401, let api {
@@ -486,10 +510,14 @@ struct RecordedPlaybackMetrics {
     var errorCodes: [Int] = []
     var preparationSeconds: Double?
     var delivery = "not observed"
+    var stage = "not started"
+    var failureDomain: String?
+    var failureCode: Int?
+    var httpStatus: Int?
     var report: String {
         let absent = String(localized: "review.notObserved", defaultValue: "not observed")
         func seconds(_ value: Double?) -> String { value.map { String(format: "%.3f s", $0) } ?? absent }
-        return "delivery: \(delivery)\nwindowPreparation: \(seconds(preparationSeconds))\nplayerReady: \(seconds(readySeconds))\nfirstDecodedFrame: \(seconds(firstDecodedSeconds))\nseekDecodedFrame: \(seconds(seekDecodedSeconds))\nstalls: \(stalls)\ndroppedFrames: \(droppedFrames.map(String.init) ?? absent)\nAVPlayer error codes: \(errorCodes)\n" + String(localized: "review.metricBasis", defaultValue: "Startup times begin at the recorded window intent; seeks begin at native seek dispatch. Decoded video-output frames are measured, not display or device certification.")
+        return "stage: \(stage)\nHTTP status: \(httpStatus.map(String.init) ?? absent)\nfailure domain: \(failureDomain ?? absent)\nfailure code: \(failureCode.map(String.init) ?? absent)\ndelivery: \(delivery)\nwindowPreparation: \(seconds(preparationSeconds))\nplayerReady: \(seconds(readySeconds))\nfirstDecodedFrame: \(seconds(firstDecodedSeconds))\nseekDecodedFrame: \(seconds(seekDecodedSeconds))\nstalls: \(stalls)\ndroppedFrames: \(droppedFrames.map(String.init) ?? absent)\nAVPlayer error codes: \(errorCodes)\n" + String(localized: "review.metricBasis", defaultValue: "Startup times begin at the recorded window intent; seeks begin at native seek dispatch. Decoded video-output frames are measured, not display or device certification.")
     }
 }
 
@@ -566,12 +594,13 @@ final class RecordedViewingRegistry: ObservableObject {
 struct NativeRecordingSurface: View {
     @ObservedObject var owner: RecordingPlayer
     var body: some View {
-        Group {
-            if owner.player.currentItem != nil {
-                NativeRecordedController(owner: owner)
-            } else if owner.loading {
+        ZStack {
+            NativeRecordedController(owner: owner)
+                .opacity(owner.player.currentItem == nil ? 0 : 1)
+                .allowsHitTesting(owner.player.currentItem != nil)
+            if owner.loading {
                 ProgressView(String(localized: "review.preparing", defaultValue: "Preparing recorded window"))
-            } else {
+            } else if owner.player.currentItem == nil {
                 ContentUnavailableView(String(localized: "viewer.recordedTitle", defaultValue: "Recorded HTTP review unavailable"),
                     systemImage: "play.slash", description: Text(owner.error ?? ViewingMessage.recorded))
             }
@@ -645,10 +674,10 @@ struct RecordedPlaybackControls: View {
                         Button("\(value.formatted())x") { owner.setRate(Float(value)) }
                     }
                 }
-                ShareLink(item: owner.metrics.report) {
-                    Label(String(localized: "review.diagnostics", defaultValue: "Playback diagnostics"), systemImage: "waveform.path.ecg")
-                }
             }.disabled(owner.loading)
+        }
+        ShareLink(item: owner.metrics.report) {
+            Label(String(localized: "review.diagnostics", defaultValue: "Playback diagnostics"), systemImage: "waveform.path.ecg")
         }
     }
 }

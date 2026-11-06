@@ -8,6 +8,7 @@ struct LiveView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.layoutDirection) private var layoutDirection
     @State private var selected: HorizonCamera?
+    @State private var selectedHandoff: LiveCameraHandoff?
     @State private var showCameraTour = false
     @State private var preferences = CameraDashboardPreferences()
     @State private var loadedPreferenceScope: String?
@@ -68,7 +69,7 @@ struct LiveView: View {
                     LiveCameraGridLayout(density: currentPreferences.effectiveDensity,
                         accessibility: dynamicTypeSize.isAccessibilitySize, layoutDirection: layoutDirection) {
                         ForEach(dashboardCameras) { camera in
-                            Button { selected = camera } label: {
+                            Button { selectCamera(camera) } label: {
                                 LiveVideoView(
                                     api: api, camera: camera,
                                     stream: camera.preferredStream(expanded: false),
@@ -164,8 +165,10 @@ struct LiveView: View {
                     ErrorNotice(message: error) { Task { await model.refresh() } }.padding()
                 }
             }
-            .sheet(item: $selected) { camera in
-                CameraDetailView(api: api, camera: camera)
+            .sheet(item: $selected, onDismiss: {
+                selectedHandoff?.release(); selectedHandoff = nil
+            }) { camera in
+                CameraDetailView(api: api, camera: camera, handoff: selectedHandoff)
             }
             .sheet(isPresented: $showCameraOrder, onDismiss: {
                 cameraOrderScope = nil
@@ -202,6 +205,12 @@ struct LiveView: View {
 
     private var dashboardCameras: [HorizonCamera] {
         currentPreferences.cameras(from: model.cameras)
+    }
+
+    private func selectCamera(_ camera: HorizonCamera) {
+        selectedHandoff?.release()
+        selectedHandoff = gridSessions[camera.id].flatMap { LiveCameraHandoff(api: api, camera: camera.id, session: $0) }
+        selected = camera
     }
 
     private func startGroupPiP() {
@@ -376,6 +385,7 @@ struct LiveVideoView: View {
     var onViewerHeightsChanged: (([Int]) -> Void)? = nil
     var exactViewerHeight: Int? = nil
     var forceRelay = false
+    var handoff: LiveCameraHandoff? = nil
     var participatesInGroupPiP = false
     var onSessionAttached: ((LivePlaybackSession) -> Void)? = nil
     var onSessionDetached: ((LivePlaybackSession) -> Void)? = nil
@@ -417,6 +427,9 @@ struct LiveVideoView: View {
             if playbackEnabled {
                 NativeRTCViewerSurface(track: rtc.videoTrack, fillVideo: fillVideo,
                     pipLayer: showsPiPControl ? rtc.pipRenderer.displayLayer : nil).id(ObjectIdentifier(playback))
+                if resolution == nil, let handoff {
+                    LiveCameraHandoffSurface(handoff: handoff, fillVideo: fillVideo)
+                }
             }
             if !playbackEnabled {
                 Label("Camera disabled", systemImage: "video.slash")
@@ -519,7 +532,10 @@ struct LiveVideoView: View {
             if !value { playback.deactivateInlineViewer(viewer) }
         }
         .onChange(of: muted, initial: true) { _, value in rtc.muted = value }
-        .onChange(of: resolution != nil, initial: true) { _, value in onVideoReady?(value) }
+        .onChange(of: resolution != nil, initial: true) { _, value in
+            if value { handoff?.release() }
+            onVideoReady?(value)
+        }
         .onChange(of: playbackError, initial: true) { _, value in onPlaybackFailure?(value) }
         .onChange(of: needsReauthentication, initial: true) { _, needed in
             if needed { model.reportSessionExpiry(from: api) }
@@ -567,6 +583,7 @@ struct LiveVideoView: View {
 struct CameraDetailView: View {
     let api: HorizonAPI
     let camera: HorizonCamera
+    let handoff: LiveCameraHandoff?
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -585,9 +602,10 @@ struct CameraDetailView: View {
     @State private var pinnedHeight = 0
     @State private var forceRelay = false
 
-    init(api: HorizonAPI, camera: HorizonCamera) {
+    init(api: HorizonAPI, camera: HorizonCamera, handoff: LiveCameraHandoff? = nil) {
         self.api = api
         self.camera = camera
+        self.handoff = handoff
         let retained = LivePictureInPictureController.shared.retainedSelection(api: api, cameraID: camera.id)
         let configuration = LivePictureInPictureController.shared.retainedViewerConfiguration(api: api, cameraID: camera.id)
         _stream = State(initialValue: "")
@@ -613,7 +631,8 @@ struct CameraDetailView: View {
                     showsPiPControl: true, adaptiveQuality: stream.isEmpty, expandedQuality: true,
                     maximumQualityHeight: maximumHeight,
                     onViewerHeightsChanged: { if !$0.isEmpty { viewerHeights = $0 } },
-                    exactViewerHeight: pinnedHeight == 0 ? nil : pinnedHeight, forceRelay: forceRelay
+                    exactViewerHeight: pinnedHeight == 0 ? nil : pinnedHeight, forceRelay: forceRelay,
+                    handoff: handoff
                 )
                 .id(retry)
                 .clipShape(RoundedRectangle(cornerRadius: foldMode == .flat ? 0 : HorizonPalette.controlRadius))
@@ -723,6 +742,11 @@ struct CameraDetailView: View {
                 }
             }
             .sheet(isPresented: $showQuickEvidence) { QuickEvidenceView(api: api, camera: camera) }
+            .onDisappear { handoff?.release() }
+            .onChange(of: scenePhase) { _, phase in if phase != .active { handoff?.release() } }
+            .onChange(of: allowed) { _, allowed in if !allowed { handoff?.release() } }
+            .onChange(of: showHistory) { _, showing in if showing { handoff?.release() } }
+            .onChange(of: showQuickEvidence) { _, showing in if showing { handoff?.release() } }
             .fullScreenCover(isPresented: $showHistory) {
                 if let history {
                     RecordingsView(api: api, context: history, standalone: true)

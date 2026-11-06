@@ -2,6 +2,19 @@ import XCTest
 @testable import HorizonCore
 
 final class PlaybackTimelineTests: XCTestCase {
+    func testReopeningReviewRebuildsBoundsForNewDayAndNewlyElapsedFootage() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 6)))
+        let first = try ReviewTimeRange(day: day, now: day.addingTimeInterval(3600), calendar: calendar)
+        let refreshed = try ReviewTimeRange(day: day, now: day.addingTimeInterval(7200), calendar: calendar)
+        XCTAssertEqual(refreshed.start, first.start)
+        XCTAssertEqual(refreshed.end - first.end, 3600)
+        let nextDay = day.addingTimeInterval(86400)
+        let other = try ReviewTimeRange(day: nextDay, now: nextDay.addingTimeInterval(3600), calendar: calendar)
+        XCTAssertEqual(other.start - first.start, 86400)
+        XCTAssertGreaterThan(try other.clamped(nextDay.timeIntervalSince1970 + 15), first.end)
+    }
     func testScrubbingIncludesKeyframeLeadInButNeverCollapsesAGap() throws {
         let spans = try JSONDecoder().decode([PlaybackSpan].self, from: Data("""
         [{"start_time":100,"end_time":110,"duration":12000},
