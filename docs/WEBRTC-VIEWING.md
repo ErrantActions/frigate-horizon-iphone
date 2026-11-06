@@ -59,6 +59,10 @@ the native 1035 release recorded below. Server deployment remains out of scope.
 
 ### Group Picture in Picture
 
+**TestFlight 1037 is processed and available to Owner Testing Auto.** Open
+Live, wait for the grid cameras to show video, then tap **Group PiP**.
+The same build also contains the persistent all-camera main Live grid.
+
 The main Live screen now offers **Group PiP** for every camera in its current
 dashboard/group/favorites order. It reuses the already running low-rung muted
 WebRTC sessions: no extra peer, source pull, capture track, decoder, media
@@ -106,6 +110,40 @@ failures. Real-iPhone PiP startup, background/restore, orientation, multi-camera
 power/decoder limits and prolonged playback remain device acceptance; native
 compilation and compositor fixtures are not claims of phone certification.
 
+Source **`8704097`** passed unsigned
+[qualification 42302575231](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42302575231)
+and signed
+[TestFlight release 42303115775](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42303115775),
+job `128185628289`:
+
+| Exact check | Result |
+| --- | --- |
+| `swift test` | **397 tests, 0 failures** |
+| `python3 -m unittest discover -s tools/tests` | **79 committed guards passed** |
+| Unsigned generic iOS-device Release build | **BUILD SUCCEEDED** |
+| App/NSE profiles, Release compilation/signing, archive, export, upload | **Passed** |
+| Core Image mosaic pixel placement/colors, black unavailable tiles, no retained cleared pixels | **Passed native macOS fixtures** |
+| Tile completeness, order, staleness, unique authorized membership | **Passed regressions** |
+| Physical iPhone multi-camera PiP/background/restore and battery limits | **Not run** |
+
+Apple build **`9011eb69-8f8a-4d2f-a4af-d25dd99eade9`**, version **1037**, is
+`VALID`, `usesNonExemptEncryption=false`, `IN_BETA_TESTING`, and belongs to
+Owner Testing Auto (`2e555dfe-174b-42b5-8b03-83519d7f2fd9`), verified read-only.
+The existing protected app-store workflow was approved for this owner-requested
+native beta only; no external beta submission or signing/readiness-rule changes.
+`APNS_IMAGES_BACKEND_READY=false` and its `2026-10-30T05:27:40Z` timestamp remain.
+
+```powershell
+gh workflow run ios.yml --repo ErrantActions/frigate-horizon-iphone --ref main `
+  -f confirm_paid_run=true -f include_compatibility=false `
+  -f device_build_only=true -f upload_artifacts=false
+gh workflow run testflight.yml --repo ErrantActions/frigate-horizon-iphone --ref main `
+  -f confirm_upload=true -f allow_pending_image_backend=true
+```
+
+No simulator/UI tests, test notifications, backend/router/DNS/TURN/provider
+changes or original-download mutations were performed.
+
 ### Main Live grid stays loaded while scrolling
 
 At the owner's request, the main dashboard now owns **every camera in its
@@ -151,7 +189,8 @@ checks eager all-camera construction, flat identity, viewport-independent
 ownership and retained tab/scene/access/PiP shutdown paths.
 
 No server configuration, notifications, downloads or signing state changed.
-This fix is pushed source only; TestFlight **1036** still predates it.
+This fix now ships together with Group PiP in TestFlight **1037**;
+TestFlight **1036** predates both.
 
 ### Native HTTP 422 repair after build 1035
 
@@ -267,7 +306,17 @@ Normal TLS/ATS, API cookies/write CSRF, audio/mute and fold-aware layout remain.
 Notification renewal preserves the installation's actual camera selection,
 including `camera_ids: []`, confidence policy and private photo behavior.
 
-## Current delivered binary: TestFlight 1036
+## Current delivered binary: TestFlight 1037
+
+The explicit owner request shipped **8704097** in
+[release 42303115775](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42303115775):
+397 Core tests, 79 guards, signed app/NSE archive/export/upload passed.
+Apple build `9011eb69-8f8a-4d2f-a4af-d25dd99eade9` is VALID, export compliance
+cleared, IN_BETA_TESTING and included in Owner Testing Auto. This release adds
+Group PiP and persistent all-camera Live grid ownership; physical playback/
+background/PiP and network performance still need real-device acceptance.
+
+## Previous delivered binary: TestFlight 1036
 
 After the owner's explicit "push the testflight", source `c2a9e20` shipped in
 [release 41391343545](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41391343545):

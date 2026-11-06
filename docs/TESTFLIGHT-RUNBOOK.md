@@ -2,8 +2,9 @@
 
 **Current source: live WebRTC plus capability-gated recorded HTTPS MP4
 architecture.** The owner subsequently explicitly requested TestFlight;
-**1036** is now uploaded, processed and available to Owner Testing Auto, with
-the live 422 repair and direct-original HTTP client. That authorization is for the native release,
+**1037** is now uploaded, processed and available to Owner Testing Auto, with
+Group PiP, persistent Live grid, live 422 repair and direct-original HTTP client.
+That authorization is for the native release,
 not server deployment or test pushes. The earlier HLS sections are historical.
 Live and recorded HTTP are
 owner-reported deployed; the current source wires authenticated recorded-v1
@@ -11,21 +12,24 @@ discovery/ranges, while physical iPhone qualification remains unverified. Do not
 revive HLS, recorded WebRTC or download-URL streaming as a fallback. See
 [WEBRTC-VIEWING.md](WEBRTC-VIEWING.md) for implementation, exact checks and blockers.
 
-## Latest verified release: 1036
+## Latest verified release: 1037
 
-[Run 41391343545](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/41391343545),
-job `125103650000`, source `c2a9e208f8479d475b293816efb582c172404d3c`,
-selected build **1036**. It passed **386 Core tests**, **72 guards**,
+[Run 42303115775](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42303115775),
+job `128185628289`, source `87040970b27b93492d288e6659755c9a526d70ad`,
+selected build **1037**. It passed **397 Core tests**, **79 guards**,
 both app/NSE Release compilation and distribution signing, archive, export
 and upload. No simulator/UI tests/previews were run.
 
-Apple build `bb1d1054-20b9-4def-9c9c-46297f8f5813` is **VALID**,
+Apple build `9011eb69-8f8a-4d2f-a4af-d25dd99eade9` is **VALID**,
 `usesNonExemptEncryption=false`, **IN_BETA_TESTING**, and included in
 **Owner Testing Auto** (`2e555dfe-174b-42b5-8b03-83519d7f2fd9`). External
 tester groups/submission were not changed. Processing and group membership
 were verified read-only through App Store Connect.
 
-This includes the nonnull grid `max_height`/exact five-field creation fix,
+Use **Live -> Group PiP** after all selected grid cameras show live video.
+The mosaic reuses those native sessions without duplicate streams; the eager
+Live grid also keeps all its cameras loaded when scrolling. This includes
+the earlier nonnull grid `max_height`/exact five-field creation fix,
 sanitized validation details, observed live HTTP/heartbeat diagnostics and
 OpenAPI-negotiated direct-original MP4 delivery with tail-index support.
 TestFlight availability does not certify physical live 201/answer 204/decoded
