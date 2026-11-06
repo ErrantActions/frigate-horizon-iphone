@@ -19,6 +19,8 @@ struct LiveView: View {
     @State private var showCameraOrder = false
     @State private var cameraOrderScope: String?
     @State private var cameraOrderSnapshot: CameraDashboardPreferences?
+    @State private var gridSessions: [String: LivePlaybackSession] = [:]
+    @ObservedObject private var groupPiP = LiveGroupPictureInPictureController.shared
 
     var body: some View {
         NavigationStack {
@@ -33,6 +35,23 @@ struct LiveView: View {
                         Button("Reorder", systemImage: "arrow.up.arrow.down") { openCameraOrder() }
                             .frame(minHeight: 44)
                             .disabled(!canEditPreferences || dashboardCameras.count < 2)
+                    }
+                    Button {
+                        if groupPiP.hasOwner { groupPiP.stop() }
+                        else { startGroupPiP() }
+                    } label: {
+                        Label(groupPiP.hasOwner
+                            ? String(localized: "groupPip.stop", defaultValue: "Stop Group PiP")
+                            : String(localized: "groupPip.start", defaultValue: "Group PiP"),
+                            systemImage: groupPiP.hasOwner ? "pip.exit" : "pip.enter")
+                    }
+                    .buttonStyle(HorizonButtonStyle(.secondary))
+                    .disabled(!active || dashboardCameras.isEmpty)
+                    if groupPiP.hasOwner {
+                        LiveGroupPiPPreview(controller: groupPiP)
+                            .aspectRatio(16 / 9, contentMode: .fit)
+                            .frame(maxWidth: 360)
+                            .accessibilityLabel(String(localized: "groupPip.preview", defaultValue: "Live camera group Picture in Picture preview"))
                     }
                     if let group = currentPreferences.selectedGroup {
                         Text(group.name).font(.headline).lineLimit(2)
@@ -59,7 +78,11 @@ struct LiveView: View {
                                     favoriteAction: canEditPreferences ? {
                                         updatePreferences { try $0.toggleFavorite(camera.id) }
                                     } : nil,
-                                    adaptiveQuality: true
+                                    adaptiveQuality: true, participatesInGroupPiP: true,
+                                    onSessionAttached: { gridSessions[camera.id] = $0 },
+                                    onSessionDetached: { session in
+                                        if gridSessions[camera.id] === session { gridSessions.removeValue(forKey: camera.id) }
+                                    }
                                 )
                                 .aspectRatio(16 / 9, contentMode: .fit)
                                 .overlay(alignment: .bottomLeading) {
@@ -112,6 +135,14 @@ struct LiveView: View {
             .horizonScreen()
             .navigationTitle("Live")
             .task(id: preferenceScope) { loadPreferences() }
+            .onChange(of: groupPiP.restorationRevision, initial: true) { _, revision in
+                guard revision > 0 else { return }
+                selected = nil; showCameraTour = false; showCameraGroups = false
+                showIncidentReplay = false; showCameraOrder = false
+            }
+            .onChange(of: dashboardCameras.map(\.id)) { _, ids in
+                if groupPiP.hasOwner, ids != groupPiP.cameraIDs { groupPiP.stop() }
+            }
             .onChange(of: model.cameras.filter(\.isLiveDashboardCamera).map(\.id)) { _, ids in
                 if let selected, !ids.contains(selected.id) { self.selected = nil }
             }
@@ -171,6 +202,17 @@ struct LiveView: View {
 
     private var dashboardCameras: [HorizonCamera] {
         currentPreferences.cameras(from: model.cameras)
+    }
+
+    private func startGroupPiP() {
+        let cameras = dashboardCameras
+        guard cameras.allSatisfy({ gridSessions[$0.id] != nil }) else {
+            groupPiP.error = String(localized: "groupPip.waitForVideo", defaultValue: "Wait for every camera in this grid to show live video, resolve any camera errors, then try Group PiP again.")
+            return
+        }
+        groupPiP.start(api: api, cameras: cameras.compactMap { camera in
+            gridSessions[camera.id].map { LiveGroupPiPCamera(id: camera.id, name: camera.name, session: $0) }
+        })
     }
 
     private var preferenceScope: String? {
@@ -334,11 +376,15 @@ struct LiveVideoView: View {
     var onViewerHeightsChanged: (([Int]) -> Void)? = nil
     var exactViewerHeight: Int? = nil
     var forceRelay = false
+    var participatesInGroupPiP = false
+    var onSessionAttached: ((LivePlaybackSession) -> Void)? = nil
+    var onSessionDetached: ((LivePlaybackSession) -> Void)? = nil
     @EnvironmentObject private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @StateObject private var attachment = LivePlaybackAttachment()
     @ObservedObject private var pictureInPicture = LivePictureInPictureController.shared
+    @ObservedObject private var groupPictureInPicture = LiveGroupPictureInPictureController.shared
     @ObservedObject private var network = LiveNetworkConditions.shared
     private let transport = "webrtc"
     @State private var retry = 0
@@ -459,10 +505,11 @@ struct LiveVideoView: View {
         } message: {
             Text(playback.pictureInPictureError ?? "")
         }
-        .onAppear { visible = true; playback.attach(viewer) }
+        .onAppear { visible = true; playback.attach(viewer); onSessionAttached?(playback) }
         .onDisappear {
             visible = false
             playback.detach(viewer)
+            onSessionDetached?(playback)
             if !playback.hasInlineViewer { reflection?.clearSource() }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -485,7 +532,8 @@ struct LiveVideoView: View {
             else { reflection?.clearSource() }
         }
         .onReceive(rtc.$advertisedHeights) { heights in onViewerHeightsChanged?(heights) }
-        .task(id: "\(ObjectIdentifier(api))-\(camera.id)-\(playbackEnabled)-\(maximumQualityHeight ?? 0)-\(exactViewerHeight ?? 0)-\(forceRelay)-\(network.restricted)-\(expandedQuality)-\(active)-\(visible)-\(scenePhase == .active)-\(retry)-\(muted)-\(pictureInPicture.scopeRevision)") {
+        .task(id: "\(ObjectIdentifier(api))-\(camera.id)-\(playbackEnabled)-\(maximumQualityHeight ?? 0)-\(exactViewerHeight ?? 0)-\(forceRelay)-\(network.restricted)-\(expandedQuality)-\(active)-\(visible)-\(scenePhase == .active)-\(retry)-\(muted)-\(pictureInPicture.scopeRevision)-\(groupPictureInPicture.scopeRevision)") {
+            if participatesInGroupPiP { attachment.adoptGroupSession(api: api, cameraID: camera.id, viewer: viewer) }
             attachment.adoptRetainedSession(
                 api: api, cameraID: camera.id, stream: effectiveStream, transport: transport,
                 enabled: showsPiPControl, viewer: viewer
@@ -497,6 +545,7 @@ struct LiveVideoView: View {
                 viewer: viewer, iceServers: model.iceServers, adaptiveQuality: qualityPlan,
                 viewerConfiguration: viewingConfiguration
             )
+            onSessionAttached?(playback)
             if active, visible, scenePhase == .active {
                 reflection?.follow(realtime: rtc.frameObserver)
             } else {

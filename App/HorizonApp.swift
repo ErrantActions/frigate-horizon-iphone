@@ -35,12 +35,13 @@ struct HorizonApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .horizonMediaCleanupFailure)) { notification in
                 if let message = notification.object as? String { model.error = message }
             }
-            .task(id: "\(model.api.map { String(describing: ObjectIdentifier($0)) } ?? "")-\(model.profile?.username ?? "")-\(model.profile?.role ?? "")-\(model.cameras.map { "\($0.id):\($0.settings.enabled)" }.joined(separator: ","))") {
+            .task(id: "\(model.api.map { String(describing: ObjectIdentifier($0)) } ?? "")-\(model.profile?.username ?? "")-\(model.profile?.role ?? "")-\(model.cameras.map { "\($0.id):\($0.settings.enabled):\($0.isLiveDashboardCamera)" }.joined(separator: ","))") {
                 let account = model.api.flatMap { api in
                     model.profile.map { HorizonAccountScope.key(server: api.address.url.absoluteString, username: $0.username) }
                 }
                 if mediaAccount != account {
                     LivePictureInPictureController.shared.stop()
+                    LiveGroupPictureInPictureController.shared.stop()
                     RecordedViewingRegistry.stopAll()
                     mediaAccount = account
                 }
@@ -55,6 +56,8 @@ struct HorizonApp: App {
                 }
                 LivePictureInPictureController.shared.updateScope(api: model.api,
                     allowedCameraIDs: Set(model.cameras.filter { $0.settings.enabled }.map(\.id)))
+                LiveGroupPictureInPictureController.shared.updateScope(api: model.api,
+                    allowedCameraIDs: Set(model.cameras.filter(\.isLiveDashboardCamera).map(\.id)))
                 RecordedViewingRegistry.updateScope(api: model.api, cameras: Set(model.cameras.map(\.id)))
                 await push.attach(api: model.api, username: model.profile?.username,
                     allowedCameraIDs: model.cameras.map(\.id))

@@ -57,6 +57,55 @@ the native 1035 release recorded below. Server deployment remains out of scope.
 
 ## Live implementation retained
 
+### Group Picture in Picture
+
+The main Live screen now offers **Group PiP** for every camera in its current
+dashboard/group/favorites order. It reuses the already running low-rung muted
+WebRTC sessions: no extra peer, source pull, capture track, decoder, media
+server endpoint or recording derivative is started for the mosaic.
+
+- A native Core Image compositor fits decoded frames into one 960x540 sample
+  buffer surface with camera labels (not resolution badges). Output is capped
+  at 10 fps with one in-flight composition and one latest frame per member.
+  Stale frames older than two seconds and failed/replaced tracks become black
+  unavailable tiles instead of frozen video being presented as live.
+- A visible native preview layer hosts the AVKit sample-buffer content source.
+  PiP starts only by explicit button, after all requested cameras have live
+  frames and authorized grid sessions. Startup has a ten-second timeout;
+  leaving before AVKit accepts startup cancels it rather than retaining work.
+- Once AVKit accepts the explicit start, the controller retains exactly those
+  camera sessions across scene transitions/navigation. Other grid players
+  still release normally. Closing PiP releases members without inline owners;
+  cameras still on the active Live screen keep playing.
+- Restoring from PiP selects Live, dismisses its camera/tools overlays and
+  reattaches the same sessions rather than opening duplicate viewers. Camera
+  order/filter changes stop the previous group before a new selection.
+- Account/API changes or any member's permission/enable/dashboard revocation
+  immediately stop/flush the group. Single-camera PiP, recorded PiP and Group
+  PiP are mutually exclusive; talkback also ends Group PiP. Audio stays muted
+  because members remain grid-mode audio-false sessions.
+- A failed source blanks only its tile and exposes an actionable app-level
+  notice. Healthy members and their heartbeats continue. No new transport or
+  endless automatic connection retry is introduced.
+
+Changed native surfaces:
+[LiveGroupPictureInPictureController.swift](../App/Media/LiveGroupPictureInPictureController.swift),
+[RTCGroupPiPRenderer.swift](../App/Media/RTCGroupPiPRenderer.swift),
+[LiveGroupPiPPreview.swift](../App/Views/LiveGroupPiPPreview.swift),
+and [LiveGroupPiPMosaic.swift](../Sources/HorizonCore/LiveGroupPiPMosaic.swift).
+Single-camera and group rendering share the existing crop/rotation/I420 pixel
+converter in [RTCViewerRendering.swift](../App/Media/RTCViewerRendering.swift).
+Live session/attachment, root/account/PiP exclusivity, localization and tests
+are wired directly. Original downloads, recordings and notifications are
+unchanged. No backend/server/provider/TURN/router settings or test pushes
+are part of this feature.
+
+More cameras mean smaller tiles and greater battery/data/decoder usage. Server
+admission limits are unchanged, and Group PiP does not waive existing camera
+failures. Real-iPhone PiP startup, background/restore, orientation, multi-camera
+power/decoder limits and prolonged playback remain device acceptance; native
+compilation and compositor fixtures are not claims of phone certification.
+
 ### Main Live grid stays loaded while scrolling
 
 At the owner's request, the main dashboard now owns **every camera in its

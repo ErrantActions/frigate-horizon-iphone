@@ -87,7 +87,7 @@ final class RTCViewerPiPRenderer: NSObject, RTCVideoRenderer, @unchecked Sendabl
     let displayLayer = AVSampleBufferDisplayLayer()
     private let lock = NSLock()
     private let queue = DispatchQueue(label: "Horizon.rtc-pip", qos: .userInitiated)
-    private let context = CIContext(options: [.cacheIntermediates: false])
+    private let converter = RTCViewerPixelConverter()
     private var running = false
     private var busy = false
     private var generation = UUID()
@@ -142,7 +142,7 @@ final class RTCViewerPiPRenderer: NSObject, RTCVideoRenderer, @unchecked Sendabl
         }
     }
     private func sample(_ frame: RTCVideoFrame) throws -> CMSampleBuffer {
-        let buffer = try pixels(frame)
+        let buffer = try converter.pixels(frame)
         var format: CMVideoFormatDescription?
         var result: CMSampleBuffer?
         guard CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
@@ -159,7 +159,12 @@ final class RTCViewerPiPRenderer: NSObject, RTCVideoRenderer, @unchecked Sendabl
         }
         return result
     }
-    private func pixels(_ frame: RTCVideoFrame) throws -> CVPixelBuffer {
+    private enum RenderFailure: Error { case invalid }
+}
+
+final class RTCViewerPixelConverter {
+    private let context = CIContext(options: [.cacheIntermediates: false])
+    func pixels(_ frame: RTCVideoFrame) throws -> CVPixelBuffer {
         let image: CIImage
         if let source = frame.buffer as? RTCCVPixelBuffer {
             let raw = source.pixelBuffer

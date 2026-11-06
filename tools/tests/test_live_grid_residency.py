@@ -20,7 +20,7 @@ class TestLiveGridResidency(unittest.TestCase):
         source = (ROOT / "App/Views/LiveView.swift").read_text(encoding="utf-8")
         self.assertIn("active: active && selected == nil && !showCameraTour", source)
         self.assertIn("!showCameraGroups && !showIncidentReplay && !showCameraOrder", source)
-        self.assertIn(".onAppear { visible = true; playback.attach(viewer) }", source)
+        self.assertIn(".onAppear { visible = true; playback.attach(viewer); onSessionAttached?(playback) }", source)
         self.assertIn("playback.detach(viewer)", source)
         self.assertIn("if phase != .active { playback.deactivateInlineViewer(viewer) }", source)
         self.assertIn("if !value { playback.deactivateInlineViewer(viewer) }", source)

@@ -106,6 +106,7 @@ final class CameraTalkbackController: NSObject, ObservableObject {
             self.fail(Self.holdLimitMessage)
         }
         LivePictureInPictureController.shared.stop()
+        LiveGroupPictureInPictureController.shared.stop()
         task = Task { [weak self] in
             guard let self else { return }
             do {

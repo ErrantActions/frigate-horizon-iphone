@@ -20,6 +20,11 @@ final class LivePlaybackAttachment: ObservableObject {
             api: api, cameraID: cameraID, stream: stream, transport: transport), retained !== session else { return }
         session.detach(viewer); session = retained; observeSession(); retained.attach(viewer)
     }
+    func adoptGroupSession(api: HorizonAPI, cameraID: String, viewer: UUID) {
+        guard let retained = LiveGroupPictureInPictureController.shared.retainedSession(api: api, cameraID: cameraID),
+              retained !== session else { return }
+        session.detach(viewer); session = retained; observeSession(); retained.attach(viewer)
+    }
     private func observeSession() {
         observation = session.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
@@ -60,7 +65,8 @@ final class LivePlaybackSession: ObservableObject {
     func detach(_ viewer: UUID) { viewers.removeValue(forKey: viewer); stopIfNoOwner() }
     func deactivateInlineViewer(_ viewer: UUID) { viewers[viewer] = false; stopIfNoOwner() }
     private func stopIfNoOwner() {
-        if !hasInlineViewer && !LivePictureInPictureController.shared.isPlaying(self) { suspend() }
+        if !hasInlineViewer && !LivePictureInPictureController.shared.isPlaying(self) &&
+            !LiveGroupPictureInPictureController.shared.isPlaying(self) { suspend() }
     }
     func configure(api: HorizonAPI, cameraID: String, stream: String?, transport: String,
                    muted: Bool, cameraEnabled: Bool, active: Bool, visible: Bool, foreground: Bool,
@@ -71,6 +77,7 @@ final class LivePlaybackSession: ObservableObject {
         viewers[viewer] = active && visible && foreground && authorized && cameraEnabled
         guard authorized, cameraEnabled, let configuration else {
             if pip.owns(self) { pip.stop() }
+            if LiveGroupPictureInPictureController.shared.owns(self) { LiveGroupPictureInPictureController.shared.stop() }
             suspend(); return
         }
         let sameEnvelope = viewerConfiguration.map {
@@ -81,6 +88,7 @@ final class LivePlaybackSession: ObservableObject {
         let sourceChanged = apiIdentity != ObjectIdentifier(api) || selection?.cameraID != cameraID || !sameEnvelope
         if sourceChanged {
             if pip.owns(self) { pip.stop() }
+            if LiveGroupPictureInPictureController.shared.owns(self) { LiveGroupPictureInPictureController.shared.stop() }
             suspend(); apiIdentity = ObjectIdentifier(api)
             failure = nil; paused = false; needsReauthentication = false
         }
@@ -90,7 +98,7 @@ final class LivePlaybackSession: ObservableObject {
         viewerConfiguration = configuration
         selection = .init(cameraID: cameraID, stream: "", transport: "webrtc", muted: muted)
         rtcViewer.muted = muted
-        guard hasInlineViewer || pip.isPlaying(self) else { suspend(); return }
+        guard hasInlineViewer || pip.isPlaying(self) || LiveGroupPictureInPictureController.shared.isPlaying(self) else { suspend(); return }
         guard playback == nil, failure == nil, !paused else { return }
         let token = UUID(); generation = token
         playback = Task { [weak self] in
@@ -125,8 +133,12 @@ final class LivePlaybackSession: ObservableObject {
         failure = message; needsReauthentication = authenticationRequired
         if LivePictureInPictureController.shared.owns(self) {
             LivePictureInPictureController.shared.sourceFailed(self, message: message)
-        } else { suspend() }
+        } else {
+            LiveGroupPictureInPictureController.shared.sourceFailed(self)
+            suspend()
+        }
     }
+    func groupPictureInPictureEnded() { stopIfNoOwner() }
     func pictureInPictureEnded(keepInlinePlayback: Bool) {
         if !keepInlinePlayback || !hasInlineViewer { paused = true; suspend() }
     }

@@ -518,6 +518,7 @@ final class RecordedViewingRegistry: ObservableObject {
         }
         if pip !== player { pip?.stop() }
         LivePictureInPictureController.shared.stop()
+        LiveGroupPictureInPictureController.shared.stop()
         pip = player; pipToken = token
     }
     static func releasePiP(_ player: RecordingPlayer) { if pip === player { pip = nil; pipToken = nil } }

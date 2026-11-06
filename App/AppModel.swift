@@ -184,6 +184,7 @@ final class AppModel: ObservableObject {
         try push.abandonForLogout()
         try SessionVault.clear()
         LivePictureInPictureController.shared.stop()
+        LiveGroupPictureInPictureController.shared.stop()
         RecordedViewingRegistry.stopAll()
         // Owned lease-cleanup tasks retain their old client until authenticated cleanup finishes.
         api = nil

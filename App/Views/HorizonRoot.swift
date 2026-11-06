@@ -12,6 +12,7 @@ struct HorizonRoot: View {
     @State private var libraryCamera = "all"
     @State private var restoredCamera: HorizonCamera?
     @ObservedObject private var pictureInPicture = LivePictureInPictureController.shared
+    @ObservedObject private var groupPiP = LiveGroupPictureInPictureController.shared
     @ObservedObject private var talkbackCleanup = CameraTalkbackCleanupStore.shared
     @ObservedObject private var viewerCleanup = ViewerCleanupStore.shared
     @ObservedObject private var recordedCleanup = RecordedViewingRegistry.shared
@@ -63,6 +64,11 @@ struct HorizonRoot: View {
                     Button("Dismiss message") { pictureInPicture.error = nil }
                 }
                 .padding().background(HorizonPalette.surface)
+            } else if let error = groupPiP.error {
+                VStack {
+                    ErrorNotice(message: error)
+                    Button("Dismiss message") { groupPiP.error = nil }
+                }.padding().background(HorizonPalette.surface)
             } else if let error = viewerCleanup.error {
                 VStack {
                     ErrorNotice(message: error)
@@ -99,6 +105,7 @@ struct HorizonRoot: View {
             }
         }
         .onAppear {
+            groupPiP.restoreUserInterface = { selection = .live; restoredCamera = nil }
             pictureInPicture.restoreUserInterface = { requested in
                 guard model.api === api,
                       let camera = model.cameras.first(where: { $0.id == requested.cameraID && $0.settings.enabled }) else {
@@ -111,7 +118,7 @@ struct HorizonRoot: View {
                 restoredCamera = camera
             }
         }
-        .onDisappear { pictureInPicture.restoreUserInterface = nil }
+        .onDisappear { pictureInPicture.restoreUserInterface = nil; groupPiP.restoreUserInterface = nil }
         .onChange(of: model.cameras.filter { $0.settings.enabled }.map(\.id)) { _, ids in
             if let restoredCamera, !ids.contains(restoredCamera.id) { self.restoredCamera = nil }
         }
