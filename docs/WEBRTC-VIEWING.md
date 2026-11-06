@@ -57,6 +57,53 @@ the native 1035 release recorded below. Server deployment remains out of scope.
 
 ## Live implementation retained
 
+### Main Live grid stays loaded while scrolling
+
+At the owner's request, the main dashboard now owns **every camera in its
+current grid**, not just tiles intersecting the scroll viewport. The former
+`LazyVGrid` delayed offscreen creation and `onScrollVisibilityChange` explicitly
+deactivated cameras as they scrolled away; both behaviors are removed.
+
+[LiveCameraGridLayout.swift](../App/Views/LiveCameraGridLayout.swift) eagerly
+lays out the flat camera-ID `ForEach` in
+[LiveView.swift](../App/Views/LiveView.swift), so offscreen rows start on entry
+and scrolling does not detach/delete their viewers. No row-index wrappers are
+introduced that would replace camera/player identity when columns or order
+change. Existing compact/comfortable/one-column density, accessibility sizing,
+RTL, group/favorites/order filtering and disabled/revoked-camera exclusion stay.
+Grid sessions still use discovered grid quality with audio false.
+
+This increases concurrent bandwidth/decoder/server usage. Server admission
+limits are unchanged; capacity denial remains actionable, not a reconnect
+loop. The main Live tab/screen must still be active and foreground. Opening
+detail/tools, switching tabs, backgrounding or removing camera eligibility
+ends ordinary ownership; explicitly active PiP retains only its owner.
+Camera Tour and recorded playback do not inherit hidden persistent players.
+
+Source **`d3c49d1`** passed
+[unsigned qualification 42299512309](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42299512309),
+job `128173337428`:
+
+| Exact check | Result |
+| --- | --- |
+| `swift test` | **391 tests, 0 failures** |
+| `python3 -m unittest discover -s tools/tests` | **75 committed guards passed** |
+| `python -m unittest discover -s tools\tests -p 'test_live*.py'` | **7 focused guards passed** |
+| `python -m unittest discover -s tools\tests -p test_webrtc_viewing.py` | **23 viewing guards passed** |
+| Generic iOS-device Release `CODE_SIGNING_ALLOWED=NO build` | **BUILD SUCCEEDED** |
+| Physical iPhone scroll/start-all/multi-camera capacity/battery/PiP | Not run |
+
+[LiveCameraGridGeometryTests.swift](../Tests/HorizonCoreTests/LiveCameraGridGeometryTests.swift)
+checks exact density thresholds, every row including offscreen positions,
+empty/partial rows, accessibility and non-overlap across widths/camera counts.
+[test_live_grid_residency.py](../tools/tests/test_live_grid_residency.py)
+failed against the lazy/scroll-unload implementation before the fix and now
+checks eager all-camera construction, flat identity, viewport-independent
+ownership and retained tab/scene/access/PiP shutdown paths.
+
+No server configuration, notifications, downloads or signing state changed.
+This fix is pushed source only; TestFlight **1036** still predates it.
+
 ### Native HTTP 422 repair after build 1035
 
 The native body already had exactly five keys, but grid creation encoded
