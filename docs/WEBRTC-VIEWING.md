@@ -102,7 +102,34 @@ Changed surfaces:
 [RecordingPlayer.swift](../App/Media/RecordingPlayer.swift),
 [ReviewWorkspaceView.swift](../App/Views/ReviewWorkspaceView.swift),
 and [OwnedWebRTCViewer.swift](../App/Media/OwnedWebRTCViewer.swift), plus related
-localization/tests. Qualification results are recorded after native validation.
+localization/tests.
+
+Source **`cf090f5`** passed
+[unsigned qualification 42307508639](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42307508639),
+job `128200477618`:
+
+| Exact check | Result |
+| --- | --- |
+| `swift test` | **398 tests, 0 failures** |
+| `python3 -m unittest discover -s tools/tests` | **84 committed guards passed** |
+| Generic iOS-device Release `CODE_SIGNING_ALLOWED=NO build` | **BUILD SUCCEEDED** |
+| Native macOS authenticated MP4/closed-tail-index decode and same-item seeks | **Passed existing fixtures** |
+| Handoff ordering/bounded ownership, stable recorded host, post-failure diagnostics | **Source regression guards passed** |
+| Review reopening range/date bounds | **Core regression passed** |
+| Physical iPhone selection latency / reproduction of reported Review error | **Not run; exact error unavailable** |
+
+```powershell
+python -m unittest discover -s tools\tests -p test_playback_handoff_review.py
+gh workflow run ios.yml --repo ErrantActions/frigate-horizon-iphone --ref main `
+  -f confirm_paid_run=true -f include_compatibility=false `
+  -f device_build_only=true -f upload_artifacts=false
+```
+
+The initial source guards failed against the missing handoff/branch-owned
+recorded UI before the patch; all five now pass. These are not a physical
+SwiftUI lifecycle reproduction or proof that the owner's unknown backend/
+device error is resolved. No simulator/UI tests or TestFlight upload were run
+for this repair; delivered TestFlight 1037 still predates it.
 No server settings, recordings/downloads or notification selections changed.
 This source repair is not yet a TestFlight upload.
 
