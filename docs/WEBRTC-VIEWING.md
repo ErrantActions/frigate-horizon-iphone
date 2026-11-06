@@ -148,8 +148,19 @@ prompt still prohibits server/router deployment from this fix workstream.
 - Known failures use bounded recovery. Auth recovery is coordinated; 403 is
   denial, admission limits are explicit, and uncertain creation is quarantined.
   Late creation is awaited and its owned session deleted.
-- Local peers/renderers stop on offscreen/navigation/background unless explicit
-  PiP owns them. Failed owned deletion is retained/retryable; fresh-auth cleanup
+- The main Live dashboard eagerly loads every camera in its current authorized,
+  enabled, dashboard/group/favorites selection, including tiles below the scroll
+  viewport. Scrolling does not detach, pause or delete those sessions. A flat
+  eager adaptive layout retains camera identity across width/density/reordering
+  changes; grid quality stays the discovered low rung with audio disabled.
+  All dashboard cameras consume network/decoder/server capacity while the main
+  screen is active, so battery/data/CPU use can increase. Admission errors remain
+  visible; the client neither changes server limits nor loops on capacity denial.
+- Leaving the main dashboard (tab, camera detail or camera tools), backgrounding,
+  removing a camera from the current filter, disabling it or losing access stops
+  its ordinary player. Only explicitly active PiP retains its owner. Other
+  viewing surfaces do not gain background or hidden warmup streams.
+  Failed owned deletion is retained/retryable; fresh-auth cleanup
   requires the same independently verified account and exact server address.
 - Native RTCMTL inline rendering and same-track sample-buffer PiP remain;
   there is no second peer/decoder/encoder. No invisible Camera Tour warmup.

@@ -6,6 +6,7 @@ struct LiveView: View {
     let active: Bool
     @EnvironmentObject private var model: AppModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.layoutDirection) private var layoutDirection
     @State private var selected: HorizonCamera?
     @State private var showCameraTour = false
     @State private var preferences = CameraDashboardPreferences()
@@ -45,7 +46,8 @@ struct LiveView: View {
                         Text("Larger accessibility text uses a single camera column.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    LazyVGrid(columns: cameraColumns, spacing: 18) {
+                    LiveCameraGridLayout(density: currentPreferences.effectiveDensity,
+                        accessibility: dynamicTypeSize.isAccessibilitySize, layoutDirection: layoutDirection) {
                         ForEach(dashboardCameras) { camera in
                             Button { selected = camera } label: {
                                 LiveVideoView(
@@ -57,7 +59,7 @@ struct LiveView: View {
                                     favoriteAction: canEditPreferences ? {
                                         updatePreferences { try $0.toggleFavorite(camera.id) }
                                     } : nil,
-                                    adaptiveQuality: true, tracksScrollVisibility: true
+                                    adaptiveQuality: true
                                 )
                                 .aspectRatio(16 / 9, contentMode: .fit)
                                 .overlay(alignment: .bottomLeading) {
@@ -187,15 +189,6 @@ struct LiveView: View {
 
     private var currentPreferences: CameraDashboardPreferences {
         canEditPreferences ? preferences : CameraDashboardPreferences()
-    }
-
-    private var cameraColumns: [GridItem] {
-        if dynamicTypeSize.isAccessibilitySize { return [GridItem(.flexible())] }
-        switch currentPreferences.effectiveDensity {
-        case .oneColumn: return [GridItem(.flexible())]
-        case .comfortable: return [GridItem(.adaptive(minimum: 280), spacing: 18)]
-        case .compact: return [GridItem(.adaptive(minimum: 170), spacing: 18)]
-        }
     }
 
     private var dashboardOptions: some View {
@@ -341,7 +334,6 @@ struct LiveVideoView: View {
     var onViewerHeightsChanged: (([Int]) -> Void)? = nil
     var exactViewerHeight: Int? = nil
     var forceRelay = false
-    var tracksScrollVisibility = false
     @EnvironmentObject private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -467,12 +459,7 @@ struct LiveVideoView: View {
         } message: {
             Text(playback.pictureInPictureError ?? "")
         }
-        .onAppear { visible = !tracksScrollVisibility; playback.attach(viewer) }
-        .onScrollVisibilityChange(threshold: 0.01) { isVisible in
-            guard tracksScrollVisibility else { return }
-            visible = isVisible
-            if !isVisible { playback.deactivateInlineViewer(viewer) }
-        }
+        .onAppear { visible = true; playback.attach(viewer) }
         .onDisappear {
             visible = false
             playback.detach(viewer)
