@@ -3,6 +3,7 @@ import AVFoundation
 
 struct LiveGroupPiPPreview: UIViewRepresentable {
     let controller: LiveGroupPictureInPictureController
+    private var wasAttached = false
     func makeUIView(context: Context) -> Host { Host(controller: controller) }
     func updateUIView(_ view: Host, context: Context) {}
     static func dismantleUIView(_ view: Host, coordinator: ()) {
@@ -25,10 +26,14 @@ struct LiveGroupPiPPreview: UIViewRepresentable {
             CATransaction.begin(); CATransaction.setDisableActions(true)
             controller.renderer.displayLayer.frame = bounds
             CATransaction.commit()
+            if window != nil { controller.attachPreview(size: bounds.size) }
         }
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            if window != nil { controller.attachPreview() } else { controller.detachPreview() }
+            if window != nil {
+                wasAttached = true
+                controller.attachPreview(size: bounds.size)
+            } else if wasAttached { controller.detachPreview() }
         }
     }
 }

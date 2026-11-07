@@ -210,6 +210,43 @@ No server settings, recordings/downloads or notification selections changed.
 
 ### Group Picture in Picture
 
+#### Floating-window transition repair after 1038
+
+The owner reported that Group PiP did not pop out when leaving the app.
+Source inspection found automatic inline PiP disabled and a session-retention
+gap before the asynchronously delivered AVKit `willStart` callback. Preview
+attachment was also reported before nonzero layout, and startup had no
+first-mosaic-frame gate or retry when those prerequisites arrived later.
+
+The repaired controller exists only after the user explicitly taps Group PiP,
+then enables Apple's supported
+[automatic inline transition](https://developer.apple.com/documentation/avkit/avpictureinpicturecontroller/canstartpictureinpictureautomaticallyfrominline).
+It polls readiness within the existing ten-second bound, waits for a sized
+in-window preview plus a successfully enqueued fresh mosaic frame, and records
+pending ownership **before** calling `startPictureInPicture()`. An explicit
+armed startup retains only its requested cameras across the app transition
+until success, cancellation or timeout; an unarmed group never retains them.
+Foreground navigation away still cancels an unrequested preview.
+
+The UI distinguishes **Cancel starting Group PiP** from active PiP rather than
+calling the preparation preview active. Startup diagnostics expose phase,
+preview size-readiness, first mosaic frame, system possibility/active state
+and AVKit/render error domain/code without private camera paths, SDP or ICE.
+
+Group compositing is now CPU-only Core Graphics/Accelerate, including native
+NV12/BGRA conversion, crop and rotation. It does not rely on a Core Image GPU
+context (or a software-option assumption) while backgrounded. Ordinary inline
+RTCMTL renderers detach when the scene is inactive; the explicit group owner
+keeps decoded tracks and heartbeats, not offscreen Metal render views. Single
+camera rendering retains its existing converter outside this group path.
+
+New native regression tests cover readiness gates, the pre-`willStart` race,
+automatic acceptance, exact timeout, cancellation/late callbacks, scene/preview
+detachment, CPU colors/NV12 ranges/crop/rotation and existing mosaic placement.
+The already qualified Review gap-search repair is included in the same source.
+The exact phone startup phase/error was unavailable, so physical pop-out/
+background/restore success is not yet asserted; qualification is recorded below.
+
 **TestFlight 1037 is processed and available to Owner Testing Auto.** Open
 Live, wait for the grid cameras to show video, then tap **Group PiP**.
 The same build also contains the persistent all-camera main Live grid.
@@ -219,16 +256,16 @@ dashboard/group/favorites order. It reuses the already running low-rung muted
 WebRTC sessions: no extra peer, source pull, capture track, decoder, media
 server endpoint or recording derivative is started for the mosaic.
 
-- A native Core Image compositor fits decoded frames into one 960x540 sample
+- A native CPU Core Graphics/Accelerate compositor fits decoded frames into one 960x540 sample
   buffer surface with camera labels (not resolution badges). Output is capped
   at 10 fps with one in-flight composition and one latest frame per member.
   Stale frames older than two seconds and failed/replaced tracks become black
   unavailable tiles instead of frozen video being presented as live.
 - A visible native preview layer hosts the AVKit sample-buffer content source.
-  PiP starts only by explicit button, after all requested cameras have live
-  frames and authorized grid sessions. Startup has a ten-second timeout;
-  leaving before AVKit accepts startup cancels it rather than retaining work.
-- Once AVKit accepts the explicit start, the controller retains exactly those
+  PiP is armed only by explicit button, after all requested cameras have live
+  frames and authorized grid sessions. Startup has a ten-second timeout and
+  can transition automatically when the user then leaves the app.
+- During that bounded explicit request and after native activation, the controller retains exactly those
   camera sessions across scene transitions/navigation. Other grid players
   still release normally. Closing PiP releases members without inline owners;
   cameras still on the active Live screen keep playing.

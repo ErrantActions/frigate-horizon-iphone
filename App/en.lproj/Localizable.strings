@@ -37,6 +37,10 @@
 "review.chooseFootageTitle" = "Choose recorded footage";
 "review.noFootageStatus" = "No recording";
 "review.selectFootage" = "Select a recording or choose another time in Review.";
+"groupPip.cancelStart" = "Cancel starting Group PiP";
+"groupPip.startingHint" = "Starting Group PiP. Keep the preview visible until the floating window opens.";
+"groupPip.activeHint" = "Group PiP is active. You can switch to another app.";
+"groupPip.diagnostics" = "Group PiP diagnostics";
 "viewer.capacity" = "The server's shared viewing/encoder capacity is in use. Close another viewer before retrying.";
 "viewer.cleanup" = "Local playback stopped, but owned viewer deletion is unconfirmed. Its lease is only a safeguard; retry cleanup before assuming server work ended.";
 "viewer.unknownCreation" = "Viewer creation has no confirmed session identity. Cleanup cannot be confirmed; no creation replay was attempted.";

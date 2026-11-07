@@ -41,18 +41,26 @@ struct LiveView: View {
                         if groupPiP.hasOwner { groupPiP.stop() }
                         else { startGroupPiP() }
                     } label: {
-                        Label(groupPiP.hasOwner
-                            ? String(localized: "groupPip.stop", defaultValue: "Stop Group PiP")
-                            : String(localized: "groupPip.start", defaultValue: "Group PiP"),
+                        Label(groupPiP.isStarting
+                            ? String(localized: "groupPip.cancelStart", defaultValue: "Cancel starting Group PiP")
+                            : (groupPiP.isActive ? String(localized: "groupPip.stop", defaultValue: "Stop Group PiP")
+                                : String(localized: "groupPip.start", defaultValue: "Group PiP")),
                             systemImage: groupPiP.hasOwner ? "pip.exit" : "pip.enter")
                     }
                     .buttonStyle(HorizonButtonStyle(.secondary))
                     .disabled(!active || dashboardCameras.isEmpty)
                     if groupPiP.hasOwner {
+                        Text(groupPiP.isStarting
+                            ? String(localized: "groupPip.startingHint", defaultValue: "Starting Group PiP. Keep the preview visible until the floating window opens.")
+                            : String(localized: "groupPip.activeHint", defaultValue: "Group PiP is active. You can switch to another app."))
+                            .font(.caption).foregroundStyle(.secondary)
                         LiveGroupPiPPreview(controller: groupPiP)
                             .aspectRatio(16 / 9, contentMode: .fit)
                             .frame(maxWidth: 360)
                             .accessibilityLabel(String(localized: "groupPip.preview", defaultValue: "Live camera group Picture in Picture preview"))
+                        ShareLink(item: groupPiP.diagnostics) {
+                            Label(String(localized: "groupPip.diagnostics", defaultValue: "Group PiP diagnostics"), systemImage: "waveform.path.ecg")
+                        }
                     }
                     if let group = currentPreferences.selectedGroup {
                         Text(group.name).font(.headline).lineLimit(2)
@@ -425,7 +433,7 @@ struct LiveVideoView: View {
         ZStack {
             Color.black
             if playbackEnabled {
-                NativeRTCViewerSurface(track: rtc.videoTrack, fillVideo: fillVideo,
+                NativeRTCViewerSurface(track: active && visible && scenePhase == .active ? rtc.videoTrack : nil, fillVideo: fillVideo,
                     pipLayer: showsPiPControl ? rtc.pipRenderer.displayLayer : nil).id(ObjectIdentifier(playback))
                 if resolution == nil, let handoff {
                     LiveCameraHandoffSurface(handoff: handoff, fillVideo: fillVideo)

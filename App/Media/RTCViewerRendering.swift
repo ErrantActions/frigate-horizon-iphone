@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreImage
 import SwiftUI
+import HorizonCore
 @preconcurrency import WebRTC
 
 final class RTCViewerFrameObserver: NSObject, RTCVideoRenderer, @unchecked Sendable {
@@ -164,6 +165,15 @@ final class RTCViewerPiPRenderer: NSObject, RTCVideoRenderer, @unchecked Sendabl
 
 final class RTCViewerPixelConverter {
     private let context = CIContext(options: [.cacheIntermediates: false])
+    func groupImage(_ frame: RTCVideoFrame) throws -> LiveGroupPiPImage {
+        if let source = frame.buffer as? RTCCVPixelBuffer {
+            return try LiveGroupPiPImage(buffer: source.pixelBuffer,
+                crop: CGRect(x: Int(source.cropX), y: Int(source.cropY),
+                    width: Int(source.cropWidth), height: Int(source.cropHeight)),
+                rotation: frame.rotation.rawValue)
+        }
+        return try LiveGroupPiPImage(buffer: i420Pixels(frame.buffer.toI420()), rotation: frame.rotation.rawValue)
+    }
     func pixels(_ frame: RTCVideoFrame) throws -> CVPixelBuffer {
         let image: CIImage
         if let source = frame.buffer as? RTCCVPixelBuffer {
@@ -178,29 +188,7 @@ final class RTCViewerPixelConverter {
             image = CIImage(cvPixelBuffer: raw).cropped(to: crop)
                 .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
         } else {
-            let source = frame.buffer.toI420()
-            guard source.width > 0, source.height > 0, source.chromaWidth > 0, source.chromaHeight > 0,
-                  source.strideY >= source.width, source.strideU >= source.chromaWidth,
-                  source.strideV >= source.chromaWidth else { throw RenderFailure.invalid }
-            let raw = try allocate(width: Int(source.width), height: Int(source.height),
-                format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
-            guard CVPixelBufferLockBaseAddress(raw, []) == kCVReturnSuccess else { throw RenderFailure.invalid }
-            defer { CVPixelBufferUnlockBaseAddress(raw, []) }
-            guard let y = CVPixelBufferGetBaseAddressOfPlane(raw, 0)?.assumingMemoryBound(to: UInt8.self),
-                  let uv = CVPixelBufferGetBaseAddressOfPlane(raw, 1)?.assumingMemoryBound(to: UInt8.self) else { throw RenderFailure.invalid }
-            for row in 0..<Int(source.height) {
-                for column in 0..<Int(source.width) {
-                    y[row * CVPixelBufferGetBytesPerRowOfPlane(raw, 0) + column] = source.dataY[row * Int(source.strideY) + column]
-                }
-            }
-            for row in 0..<Int(source.chromaHeight) {
-                for column in 0..<Int(source.chromaWidth) {
-                    let at = row * CVPixelBufferGetBytesPerRowOfPlane(raw, 1) + column * 2
-                    uv[at] = source.dataU[row * Int(source.strideU) + column]
-                    uv[at + 1] = source.dataV[row * Int(source.strideV) + column]
-                }
-            }
-            image = CIImage(cvPixelBuffer: raw)
+            image = CIImage(cvPixelBuffer: try i420Pixels(frame.buffer.toI420()))
         }
         let rotated = image.transformed(by: CGAffineTransform(rotationAngle: -CGFloat(frame.rotation.rawValue) * .pi / 180))
         let output = try allocate(width: Int(rotated.extent.width.rounded()), height: Int(rotated.extent.height.rounded()),
@@ -208,6 +196,30 @@ final class RTCViewerPixelConverter {
         context.render(rotated.transformed(by: CGAffineTransform(translationX: -rotated.extent.minX,
             y: -rotated.extent.minY)), to: output)
         return output
+    }
+    private func i420Pixels(_ source: RTCI420Buffer) throws -> CVPixelBuffer {
+        guard source.width > 0, source.height > 0, source.chromaWidth > 0, source.chromaHeight > 0,
+              source.strideY >= source.width, source.strideU >= source.chromaWidth,
+              source.strideV >= source.chromaWidth else { throw RenderFailure.invalid }
+        let raw = try allocate(width: Int(source.width), height: Int(source.height),
+            format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+        guard CVPixelBufferLockBaseAddress(raw, []) == kCVReturnSuccess else { throw RenderFailure.invalid }
+        defer { CVPixelBufferUnlockBaseAddress(raw, []) }
+        guard let y = CVPixelBufferGetBaseAddressOfPlane(raw, 0)?.assumingMemoryBound(to: UInt8.self),
+              let uv = CVPixelBufferGetBaseAddressOfPlane(raw, 1)?.assumingMemoryBound(to: UInt8.self) else { throw RenderFailure.invalid }
+        for row in 0..<Int(source.height) {
+            for column in 0..<Int(source.width) {
+                y[row * CVPixelBufferGetBytesPerRowOfPlane(raw, 0) + column] = source.dataY[row * Int(source.strideY) + column]
+            }
+        }
+        for row in 0..<Int(source.chromaHeight) {
+            for column in 0..<Int(source.chromaWidth) {
+                let at = row * CVPixelBufferGetBytesPerRowOfPlane(raw, 1) + column * 2
+                uv[at] = source.dataU[row * Int(source.strideU) + column]
+                uv[at + 1] = source.dataV[row * Int(source.strideV) + column]
+            }
+        }
+        return raw
     }
     private func allocate(width: Int, height: Int, format: OSType) throws -> CVPixelBuffer {
         guard width > 0, height > 0, width <= 8192, height <= 8192 else { throw RenderFailure.invalid }

@@ -26,6 +26,7 @@ struct HorizonApp: App {
             .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
             .task { await model.restore() }
             .onChange(of: scenePhase) { _, phase in
+                LiveGroupPictureInPictureController.shared.setForeground(phase == .active)
                 if phase == .active { Task { await model.refresh() } }
                 else if phase == .background { RecordedViewingRegistry.background() }
             }

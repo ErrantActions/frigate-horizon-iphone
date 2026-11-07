@@ -22,7 +22,9 @@ private final class GroupPiPFrameSlot: NSObject, RTCVideoRenderer, @unchecked Se
 @MainActor
 final class RTCGroupPiPRenderer {
     let displayLayer = AVSampleBufferDisplayLayer()
-    var onFailure: (() -> Void)?
+    var onFailure: ((Error) -> Void)?
+    var onFirstFrame: (() -> Void)?
+    private(set) var hasRenderedFrame = false
     private let queue = DispatchQueue(label: "Horizon.group-pip", qos: .userInitiated)
     private let composer = LiveGroupPiPMosaic()
     private let converter = RTCViewerPixelConverter()
@@ -32,7 +34,7 @@ final class RTCGroupPiPRenderer {
     private var timer: Task<Void, Never>?
     private var generation = UUID()
     private var busy = false
-    private struct Output: @unchecked Sendable { let sample: CMSampleBuffer }
+    private struct Output: @unchecked Sendable { let sample: CMSampleBuffer; let allFresh: Bool }
 
     func start(names: [String]) {
         stop()
@@ -42,7 +44,7 @@ final class RTCGroupPiPRenderer {
         var timebase: CMTimebase?
         guard CMTimebaseCreateWithSourceClock(allocator: kCFAllocatorDefault,
             sourceClock: CMClockGetHostTimeClock(), timebaseOut: &timebase) == noErr, let timebase else {
-            onFailure?(); return
+            onFailure?(RecordedHTTPError.preparationFailed); return
         }
         CMTimebaseSetTime(timebase, time: CMClockGetTime(CMClockGetHostTimeClock()))
         CMTimebaseSetRate(timebase, rate: 1)
@@ -76,8 +78,8 @@ final class RTCGroupPiPRenderer {
         let unavailable = String(localized: "groupPip.unavailable", defaultValue: "Unavailable")
         queue.async { [weak self] in
             let result = Result {
-                let pixels = try frames.map { try $0.map { try converter.pixels($0) } }
-                let buffer = try composer.render(pixels: pixels, names: names, unavailable: unavailable)
+                let images = try frames.map { try $0.map { try converter.groupImage($0) } }
+                let buffer = try composer.render(images: images, names: names, unavailable: unavailable)
                 var format: CMVideoFormatDescription?
                 var sample: CMSampleBuffer?
                 guard CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
@@ -87,7 +89,7 @@ final class RTCGroupPiPRenderer {
                 guard CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: buffer,
                     formatDescription: format, sampleTiming: &timing, sampleBufferOut: &sample) == noErr,
                       let sample else { throw ViewerTransportFailure.connectionLost }
-                return Output(sample: sample)
+                return Output(sample: sample, allFresh: frames.allSatisfy { $0 != nil })
             }
             Task { @MainActor in
                 guard let self else { return }
@@ -95,9 +97,17 @@ final class RTCGroupPiPRenderer {
                 guard self.generation == token else { return }
                 switch result {
                 case .success(let output):
-                    guard self.displayLayer.status != .failed else { self.onFailure?(); return }
-                    if self.displayLayer.isReadyForMoreMediaData { self.displayLayer.enqueue(output.sample) }
-                case .failure: self.onFailure?()
+                    guard self.displayLayer.status != .failed else {
+                        self.onFailure?(self.displayLayer.error ?? ViewerTransportFailure.connectionLost); return
+                    }
+                    if self.displayLayer.isReadyForMoreMediaData {
+                        self.displayLayer.enqueue(output.sample)
+                        if output.allFresh, !self.hasRenderedFrame {
+                            self.hasRenderedFrame = true
+                            self.onFirstFrame?()
+                        }
+                    }
+                case .failure(let error): self.onFailure?(error)
                 }
             }
         }
@@ -106,6 +116,7 @@ final class RTCGroupPiPRenderer {
         generation = UUID(); timer?.cancel(); timer = nil
         for index in tracks.indices { tracks[index]?.remove(slots[index]); slots[index].clear() }
         tracks = []; slots = []; names = []
+        hasRenderedFrame = false
         displayLayer.flushAndRemoveImage(); displayLayer.controlTimebase = nil
     }
 }

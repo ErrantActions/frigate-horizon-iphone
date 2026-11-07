@@ -67,6 +67,9 @@ struct HorizonRoot: View {
             } else if let error = groupPiP.error {
                 VStack {
                     ErrorNotice(message: error)
+                    ShareLink(item: groupPiP.diagnostics) {
+                        Label(String(localized: "groupPip.diagnostics", defaultValue: "Group PiP diagnostics"), systemImage: "waveform.path.ecg")
+                    }
                     Button("Dismiss message") { groupPiP.error = nil }
                 }.padding().background(HorizonPalette.surface)
             } else if let error = viewerCleanup.error {

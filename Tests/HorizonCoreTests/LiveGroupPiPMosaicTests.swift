@@ -3,6 +3,58 @@ import CoreVideo
 @testable import HorizonCore
 
 final class LiveGroupPiPMosaicTests: XCTestCase {
+    func testCPUConversionSupportsBothNativeNV12Ranges() throws {
+        for full in [true,false] {
+            var buffer: CVPixelBuffer?
+            XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 64, 64,
+                full ? kCVPixelFormatType_420YpCbCr8BiPlanarFullRange : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &buffer), kCVReturnSuccess)
+            let value = try XCTUnwrap(buffer)
+            CVPixelBufferLockBaseAddress(value, [])
+            let y = try XCTUnwrap(CVPixelBufferGetBaseAddressOfPlane(value, 0)?.assumingMemoryBound(to: UInt8.self))
+            let uv = try XCTUnwrap(CVPixelBufferGetBaseAddressOfPlane(value, 1)?.assumingMemoryBound(to: UInt8.self))
+            for row in 0..<64 {
+                for col in 0..<64 { y[row * CVPixelBufferGetBytesPerRowOfPlane(value, 0) + col] = full ? 76 : 81 }
+            }
+            for row in 0..<32 {
+                for col in 0..<32 {
+                    let at = row * CVPixelBufferGetBytesPerRowOfPlane(value, 1) + col * 2
+                    uv[at] = full ? 85 : 90; uv[at + 1] = full ? 255 : 240
+                }
+            }
+            CVPixelBufferUnlockBaseAddress(value, [])
+            let rendered = try LiveGroupPiPMosaic().render(pixels: [value], names: ["Front"], unavailable: "Unavailable")
+            let color = pixel(rendered, x: 480, y: 270)
+            XCTAssertGreaterThan(color.red, 220)
+            XCTAssertLessThan(color.green, 40)
+        }
+    }
+    func testCPUCompositionKeepsTopBottomOrientationAndRotation() throws {
+        let value = try buffer(red: 255, green: 0)
+        CVPixelBufferLockBaseAddress(value, [])
+        let base = try XCTUnwrap(CVPixelBufferGetBaseAddress(value)?.assumingMemoryBound(to: UInt8.self))
+        for y in 45..<90 {
+            for x in 0..<160 {
+                let at = y * CVPixelBufferGetBytesPerRow(value) + x * 4
+                base[at + 1] = 255; base[at + 2] = 0
+            }
+        }
+        CVPixelBufferUnlockBaseAddress(value, [])
+        let composer = LiveGroupPiPMosaic()
+        let normal = try composer.render(images: [LiveGroupPiPImage(buffer: value)], names: ["Front"], unavailable: "Unavailable")
+        XCTAssertGreaterThan(pixel(normal, x: 480, y: 135).red, 220)
+        XCTAssertGreaterThan(pixel(normal, x: 480, y: 405).green, 220)
+        let rotated = try composer.render(images: [LiveGroupPiPImage(buffer: value, rotation: 180)], names: ["Front"], unavailable: "Unavailable")
+        XCTAssertGreaterThan(pixel(rotated, x: 480, y: 135).green, 220)
+        XCTAssertGreaterThan(pixel(rotated, x: 480, y: 405).red, 220)
+    }
+    func testCPUImageCroppingAndUnsupportedRotationAreExplicit() throws {
+        let value = try buffer(red: 255, green: 0)
+        let image = try LiveGroupPiPImage(buffer: value, crop: CGRect(x: 10, y: 10, width: 80, height: 40))
+        XCTAssertEqual(image.image.width, 80); XCTAssertEqual(image.image.height, 40)
+        XCTAssertThrowsError(try LiveGroupPiPImage(buffer: value, rotation: 45))
+        XCTAssertThrowsError(try LiveGroupPiPImage(buffer: value, crop: CGRect(x: -1, y: 0, width: 160, height: 90)))
+    }
     func testEveryGroupMemberGetsANonoverlappingTileWithoutDroppingExtraCameras() {
         for count in [1,2,3,4,9,10,16,25,32] {
             let grid = LiveGroupPiPGeometry(count: count)
@@ -91,6 +143,13 @@ final class LiveGroupPiPMosaicTests: XCTestCase {
         return [(240,135),(720,135),(240,405),(720,405)].map { x,y in
             let offset = y * CVPixelBufferGetBytesPerRow(value) + x * 4
             return (Int(base[offset+2]), Int(base[offset+1]))
+        }
+        private func pixel(_ value: CVPixelBuffer, x: Int, y: Int) -> (red: Int, green: Int) {
+            CVPixelBufferLockBaseAddress(value, .readOnly)
+            defer { CVPixelBufferUnlockBaseAddress(value, .readOnly) }
+            guard let base = CVPixelBufferGetBaseAddress(value)?.assumingMemoryBound(to: UInt8.self) else { return (0,0) }
+            let at = y * CVPixelBufferGetBytesPerRow(value) + x * 4
+            return (Int(base[at + 2]), Int(base[at + 1]))
         }
     }
 }

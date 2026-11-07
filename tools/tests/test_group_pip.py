@@ -54,8 +54,32 @@ class TestGroupPiP(unittest.TestCase):
         self.assertIn("participatesInGroupPiP: true", view)
         self.assertIn("attachment.adoptGroupSession(", view)
         controller = source("App/Media/LiveGroupPictureInPictureController.swift")
-        self.assertIn("canStartPictureInPictureAutomaticallyFromInline = false", controller)
+        self.assertIn("canStartPictureInPictureAutomaticallyFromInline = true", controller)
         self.assertIn("sampleBufferDisplayLayer: renderer.displayLayer", controller)
         self.assertIn("self.members.allSatisfy({ $0.session.hasInlineViewer })", controller)
         root = source("App/Views/HorizonRoot.swift")
         self.assertIn("groupPiP.restoreUserInterface = { selection = .live; restoredCamera = nil }", root)
+
+    def test_start_waits_for_layout_and_first_frame_and_retains_the_explicit_pending_request(self):
+        controller = source("App/Media/LiveGroupPictureInPictureController.swift")
+        self.assertIn("startupState.retainsPlayers", controller)
+        self.assertIn("startupState.requestIfReady", controller)
+        self.assertIn("firstFrame: renderer.hasRenderedFrame", controller)
+        self.assertIn("startupState.expire", controller)
+        start = controller.split("private func startIfPossible(")[1].split("private func began")[0]
+        self.assertLess(start.index("requestIfReady"), start.index("startPictureInPicture()"))
+        preview = source("App/Views/LiveGroupPiPPreview.swift")
+        self.assertIn("controller.attachPreview(size: bounds.size)", preview)
+        self.assertIn("else if wasAttached", preview)
+        self.assertIn("setForeground(phase == .active)", source("App/HorizonApp.swift"))
+
+    def test_background_group_composition_is_cpu_only_and_inline_metal_views_detach(self):
+        mosaic = source("Sources/HorizonCore/LiveGroupPiPMosaic.swift")
+        converter = source("Sources/HorizonCore/LiveGroupPiPImage.swift")
+        renderer = source("App/Media/RTCGroupPiPRenderer.swift")
+        self.assertNotIn("CIContext", mosaic)
+        self.assertIn("CGContext(", mosaic)
+        self.assertIn("vImageConvert_420Yp8_CbCr8ToARGB8888", converter)
+        self.assertIn("converter.groupImage(", renderer)
+        self.assertIn("onFirstFrame?()", renderer)
+        self.assertIn("active && visible && scenePhase == .active ? rtc.videoTrack : nil", source("App/Views/LiveView.swift"))
