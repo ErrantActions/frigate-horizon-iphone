@@ -128,10 +128,18 @@ gh workflow run ios.yml --repo ErrantActions/frigate-horizon-iphone --ref main `
 The initial source guards failed against the missing handoff/branch-owned
 recorded UI before the patch; all five now pass. These are not a physical
 SwiftUI lifecycle reproduction or proof that the owner's unknown backend/
-device error is resolved. No simulator/UI tests or TestFlight upload were run
-for this repair; delivered TestFlight 1037 still predates it.
+device error is resolved.
+
+The owner's subsequent explicit TestFlight request shipped the repairs in
+**1038**, source `05acc72`, through
+[release 42327932032](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42327932032),
+job `128267491446`: **398 Core tests, 84 guards**, full app/NSE signing,
+archive/export/upload passed. Apple build
+`cc3d63fe-2af7-4221-b946-269b2358d5e9` is VALID,
+`usesNonExemptEncryption=false`, IN_BETA_TESTING and included in Owner Testing
+Auto, verified read-only. No simulator/UI tests were run.
 No server settings, recordings/downloads or notification selections changed.
-This source repair is not yet a TestFlight upload.
+`APNS_IMAGES_BACKEND_READY=false` and its timestamp remain unchanged.
 
 ### Group Picture in Picture
 
@@ -382,7 +390,18 @@ Normal TLS/ATS, API cookies/write CSRF, audio/mute and fold-aware layout remain.
 Notification renewal preserves the installation's actual camera selection,
 including `camera_ids: []`, confidence policy and private photo behavior.
 
-## Current delivered binary: TestFlight 1037
+## Current delivered binary: TestFlight 1038
+
+The owner-requested
+[release 42327932032](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42327932032)
+shipped source `05acc72` with 398 Core tests, 84 guards and signed app/NSE
+archive/export/upload passing. Apple build
+`cc3d63fe-2af7-4221-b946-269b2358d5e9` is VALID, export compliance cleared,
+IN_BETA_TESTING and available to Owner Testing Auto. It adds camera-selection
+handoff and stable Review host/failure diagnostics. Physical acceptance of the
+reported phone symptom remains unverified.
+
+## Previous delivered binary: TestFlight 1037
 
 The explicit owner request shipped **8704097** in
 [release 42303115775](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42303115775):
