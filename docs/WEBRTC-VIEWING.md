@@ -99,8 +99,30 @@ owner's selected range actually contains later footage. No authenticated
 production range response or physical iPhone retest is available here.
 New tests cover multi-hour/DST searches, exclusive boundaries, full exhaustion,
 partial/server/client limits, cancellation and the measured code mapping.
-Qualification results are recorded after native validation. This source update
-is not yet included in TestFlight 1038.
+
+Source **`b7b7a34`** passed
+[unsigned qualification 42332783188](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42332783188),
+job `128282855259`:
+
+| Exact check | Result |
+| --- | --- |
+| `swift test` | **407 tests, 0 failures** |
+| `python3 -m unittest discover -s tools/tests` | **87 committed guards passed** |
+| `python -m unittest discover -s tools\tests -p test_review_gap_search.py` | **3 focused guards passed** |
+| Generic iOS-device Release `CODE_SIGNING_ALLOWED=NO build` | **BUILD SUCCEEDED** |
+| Old one-hour caller code-4 reproduction / later-frame search | **Passed isolated Core fixture** |
+| 25-hour day, true exhaustion, server/client limits and cancellation | **Passed regressions** |
+| Owner's authenticated selected range / physical iPhone playback retest | **Not run** |
+
+```powershell
+gh workflow run ios.yml --repo ErrantActions/frigate-horizon-iphone --ref main `
+  -f confirm_paid_run=true -f include_compatibility=false `
+  -f device_build_only=true -f upload_artifacts=false
+```
+
+No server configuration, camera/recording/storage/notification behavior or media
+transport was changed. No simulator/UI tests or TestFlight upload were run.
+This source update is **not yet included in TestFlight 1038**.
 
 ### Loaded-camera selection and Review lifecycle repair
 
