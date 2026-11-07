@@ -3,7 +3,6 @@ import AVFoundation
 
 struct LiveGroupPiPPreview: UIViewRepresentable {
     let controller: LiveGroupPictureInPictureController
-    private var wasAttached = false
     func makeUIView(context: Context) -> Host { Host(controller: controller) }
     func updateUIView(_ view: Host, context: Context) {}
     static func dismantleUIView(_ view: Host, coordinator: ()) {
@@ -14,6 +13,7 @@ struct LiveGroupPiPPreview: UIViewRepresentable {
     }
     final class Host: UIView {
         let controller: LiveGroupPictureInPictureController
+        private var wasAttached = false
         init(controller: LiveGroupPictureInPictureController) {
             self.controller = controller
             super.init(frame: .zero)

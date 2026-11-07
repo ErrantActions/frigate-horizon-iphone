@@ -197,7 +197,7 @@ final class RTCViewerPixelConverter {
             y: -rotated.extent.minY)), to: output)
         return output
     }
-    private func i420Pixels(_ source: RTCI420Buffer) throws -> CVPixelBuffer {
+    private func i420Pixels(_ source: any RTCI420BufferProtocol) throws -> CVPixelBuffer {
         guard source.width > 0, source.height > 0, source.chromaWidth > 0, source.chromaHeight > 0,
               source.strideY >= source.width, source.strideU >= source.chromaWidth,
               source.strideV >= source.chromaWidth else { throw RenderFailure.invalid }

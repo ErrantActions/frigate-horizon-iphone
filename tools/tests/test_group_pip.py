@@ -71,6 +71,9 @@ class TestGroupPiP(unittest.TestCase):
         preview = source("App/Views/LiveGroupPiPPreview.swift")
         self.assertIn("controller.attachPreview(size: bounds.size)", preview)
         self.assertIn("else if wasAttached", preview)
+        self.assertIn("private var wasAttached = false", preview.split("final class Host: UIView")[1])
+        self.assertNotIn("wasAttached = false", preview.split("final class Host: UIView")[0])
+        self.assertIn("any RTCI420BufferProtocol", source("App/Media/RTCViewerRendering.swift"))
         self.assertIn("setForeground(phase == .active)", source("App/HorizonApp.swift"))
 
     def test_background_group_composition_is_cpu_only_and_inline_metal_views_detach(self):
