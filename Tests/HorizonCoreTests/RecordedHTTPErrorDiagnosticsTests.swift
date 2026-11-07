@@ -2,6 +2,12 @@ import XCTest
 @testable import HorizonCore
 
 final class RecordedHTTPErrorDiagnosticsTests: XCTestCase {
+    func testReportedCodeFourMeansGapAndHasAStableNonOrdinalDiagnosticName() {
+        XCTAssertEqual((RecordedHTTPError.gap as NSError).code, 4)
+        XCTAssertEqual(RecordedHTTPError.gap.diagnosticIdentifier, "gap")
+        XCTAssertEqual(RecordedHTTPError.searchLimit.diagnosticIdentifier, "search-limit")
+        XCTAssertEqual(RecordedHTTPError.emptyWindow(nextTimestamp: 100).diagnosticIdentifier, "empty-window")
+    }
     func testNativeErrorCodesAreMeasuredRatherThanInferredFromDeclarationOrder() {
         let failures: [(String, RecordedHTTPError)] = [
             ("unavailable", .unavailable), ("invalidContract", .invalidContract),

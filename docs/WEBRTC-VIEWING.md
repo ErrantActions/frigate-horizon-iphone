@@ -57,6 +57,51 @@ the native 1035 release recorded below. Server deployment remains out of scope.
 
 ## Live implementation retained
 
+### Reported Review failure code 4: bounded gap search
+
+The owner supplied build 1038 diagnostics:
+`stage: window-preparation-and-range-validation`,
+`failure domain: HorizonCore.RecordedHTTPError`, `failure code: 4`,
+no HTTP failure status, no native readiness/decoded-frame observation.
+
+An actual Swift NSError bridge probe in
+[42332292636](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42332292636)
+confirmed **code 4 is `RecordedHTTPError.gap`**. It is not inferred from enum
+declaration order: the payload-bearing empty-window case is code 0, invalid
+window is 3, expired is 5, and range-unsupported is 7. The generic unavailable
+title was not evidence that HTTP discovery or authentication failed.
+
+The empty-window workflow closed its session, searched only the following
+hour, then called `usableTimestamp()` once. If that hour was exhausted, it
+returned gap even when later footage existed in the user's selected Review
+day. An isolated fixture reproduces the same code 4 with a valid frame two
+hours later.
+
+[RecordedHTTPFrameSearch.swift](../Sources/HorizonCore/RecordedHTTPFrameSearch.swift)
+now advances through **fully exhausted** search chunks within the selected
+catalog range. Each POST remains at most 3600 seconds, with a target strictly
+before its own end. A 26-request hard bound covers a 25-hour DST day; longer
+or partially searched ranges report **search limit**, not missing footage.
+Cancellation stops further metadata requests. This does not open speculative
+media/transcode sessions, switch cameras, change original files or interpolate
+across gaps.
+
+Both empty-initial-window recovery and in-window gap seeks use this helper.
+Only after the server's searches exhaust the remaining selected range does
+Review show **No recorded footage after this position**, rather than
+**Recorded HTTP review unavailable**. The notice identifies a jump to the next
+actual frame. Diagnostics now include a stable semantic `failure reason`
+(`gap`, `search-limit`, etc.) and a distinct `frame-search` stage, so numeric
+enum layout is no longer needed for diagnosis.
+
+This fixes a demonstrated client failure path; it does not prove that the
+owner's selected range actually contains later footage. No authenticated
+production range response or physical iPhone retest is available here.
+New tests cover multi-hour/DST searches, exclusive boundaries, full exhaustion,
+partial/server/client limits, cancellation and the measured code mapping.
+Qualification results are recorded after native validation. This source update
+is not yet included in TestFlight 1038.
+
 ### Loaded-camera selection and Review lifecycle repair
 
 Selecting a camera previously deactivated its grid tile and opened a new

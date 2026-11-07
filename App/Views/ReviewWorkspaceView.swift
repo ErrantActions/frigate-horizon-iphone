@@ -363,6 +363,7 @@ struct ReviewWorkspaceView: View {
     }
 
     private var playbackStatus: String {
+        if store.playback.hasMissingFootage { return String(localized: "review.noFootageStatus", defaultValue: "No recording") }
         if store.error != nil || store.playback.error != nil { return "Playback error" }
         if store.loading || store.playback.loading { return "Opening" }
         if store.missingRecording { return "No recording" }

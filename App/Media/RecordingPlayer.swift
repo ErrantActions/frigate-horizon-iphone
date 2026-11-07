@@ -5,7 +5,7 @@ import HorizonCore
 @MainActor
 final class RecordingPlayer: ObservableObject {
     let player = AVPlayer()
-    @Published private(set) var error: String? = ViewingMessage.recorded
+    @Published private(set) var error: String?
     @Published private(set) var loading = false
     @Published private(set) var position = 0.0
     @Published private(set) var isSeeking = false
@@ -162,15 +162,17 @@ final class RecordingPlayer: ObservableObject {
         do { return try await manager.prepare(selection: selection, request: request, playing: playing) }
         catch let failure as RecordedHTTPError {
             guard case .emptyWindow(let next) = failure, let transport, let range = sourceRange,
-                  let caps = capabilities, next < range.upperBound else { throw failure }
+                  let caps = capabilities else { throw failure }
+            guard next < range.upperBound else { throw RecordedHTTPError.gap }
             try Task.checkCancellation()
-            let search = try RecordedHTTPResolveRequest(after: next,
-                before: min(range.upperBound, next + 3600), startTimestamp: next)
-            let resolution = try await transport.resolve(camera: selection.camera, request: search)
-            let actual = try resolution.usableTimestamp()
+            metrics.stage = "frame-search"
+            let actual = try await RecordedHTTPFrameSearch.nextFrame(camera: selection.camera,
+                at: next, before: range.upperBound, transport: transport)
             try Task.checkCancellation()
+            notice = String(localized: "review.nextFrame", defaultValue: "Playback advanced to the next actual recorded frame.")
             let follow = try RecordedHTTPWindowRequest.bounded(sourceRange: range, at: actual,
                 maximum: caps.maxWindowSeconds, quality: request.quality, duration: request.before - request.after)
+            metrics.stage = "window-preparation-and-range-validation"
             return try await manager.prepare(selection: selection, request: follow, playing: playing)
         }
     }
@@ -241,10 +243,9 @@ final class RecordingPlayer: ObservableObject {
         transition = true; player.pause(); wantsToPlay = autoplay; isSeeking = true
         task = Task {
             do {
-                let request = try RecordedHTTPResolveRequest(after: max(range.lowerBound, timestamp),
-                    before: min(range.upperBound, timestamp + 3600), startTimestamp: timestamp)
-                let resolution = try await transport.resolve(camera: selection.camera, request: request)
-                let actual = try resolution.usableTimestamp()
+                metrics.stage = "frame-search"
+                let actual = try await RecordedHTTPFrameSearch.nextFrame(camera: selection.camera,
+                    at: max(range.lowerBound, timestamp), before: range.upperBound, transport: transport)
                 guard generation == owner, seekGeneration == token, !Task.isCancelled else { return }
                 isSeeking = false
                 notice = String(localized: "review.nextFrame", defaultValue: "Playback advanced to the next actual recorded frame.")
@@ -459,6 +460,7 @@ final class RecordingPlayer: ObservableObject {
         let native = failure as NSError
         metrics.failureDomain = native.domain
         metrics.failureCode = native.code
+        metrics.coreFailure = (failure as? RecordedHTTPError)?.diagnosticIdentifier
         metrics.httpStatus = (failure as? HorizonError)?.httpStatusCode
         if let log = player.currentItem?.errorLog()?.events { metrics.errorCodes = log.map(\.errorStatusCode) }
         if let horizon = failure as? HorizonError {
@@ -499,6 +501,16 @@ final class RecordingPlayer: ObservableObject {
     func belongs(to api: HorizonAPI?, cameras: Set<String>) -> Bool {
         self.api === api && selection.map({ cameras.contains($0.camera) }) == true
     }
+    var hasMissingFootage: Bool { metrics.coreFailure == "gap" || metrics.coreFailure == "empty-window" }
+    var emptyStateTitle: String {
+        if hasMissingFootage {
+            return String(localized: "review.noFootageTitle", defaultValue: "No recorded footage after this position")
+        }
+        if error != nil {
+            return String(localized: "review.playbackFailedTitle", defaultValue: "Recorded playback failed")
+        }
+        return String(localized: "review.chooseFootageTitle", defaultValue: "Choose recorded footage")
+    }
 }
 
 struct RecordedPlaybackMetrics {
@@ -514,10 +526,11 @@ struct RecordedPlaybackMetrics {
     var failureDomain: String?
     var failureCode: Int?
     var httpStatus: Int?
+    var coreFailure: String?
     var report: String {
         let absent = String(localized: "review.notObserved", defaultValue: "not observed")
         func seconds(_ value: Double?) -> String { value.map { String(format: "%.3f s", $0) } ?? absent }
-        return "stage: \(stage)\nHTTP status: \(httpStatus.map(String.init) ?? absent)\nfailure domain: \(failureDomain ?? absent)\nfailure code: \(failureCode.map(String.init) ?? absent)\ndelivery: \(delivery)\nwindowPreparation: \(seconds(preparationSeconds))\nplayerReady: \(seconds(readySeconds))\nfirstDecodedFrame: \(seconds(firstDecodedSeconds))\nseekDecodedFrame: \(seconds(seekDecodedSeconds))\nstalls: \(stalls)\ndroppedFrames: \(droppedFrames.map(String.init) ?? absent)\nAVPlayer error codes: \(errorCodes)\n" + String(localized: "review.metricBasis", defaultValue: "Startup times begin at the recorded window intent; seeks begin at native seek dispatch. Decoded video-output frames are measured, not display or device certification.")
+        return "stage: \(stage)\nHTTP status: \(httpStatus.map(String.init) ?? absent)\nfailure reason: \(coreFailure ?? absent)\nfailure domain: \(failureDomain ?? absent)\nfailure code: \(failureCode.map(String.init) ?? absent)\ndelivery: \(delivery)\nwindowPreparation: \(seconds(preparationSeconds))\nplayerReady: \(seconds(readySeconds))\nfirstDecodedFrame: \(seconds(firstDecodedSeconds))\nseekDecodedFrame: \(seconds(seekDecodedSeconds))\nstalls: \(stalls)\ndroppedFrames: \(droppedFrames.map(String.init) ?? absent)\nAVPlayer error codes: \(errorCodes)\n" + String(localized: "review.metricBasis", defaultValue: "Startup times begin at the recorded window intent; seeks begin at native seek dispatch. Decoded video-output frames are measured, not display or device certification.")
     }
 }
 
@@ -601,8 +614,9 @@ struct NativeRecordingSurface: View {
             if owner.loading {
                 ProgressView(String(localized: "review.preparing", defaultValue: "Preparing recorded window"))
             } else if owner.player.currentItem == nil {
-                ContentUnavailableView(String(localized: "viewer.recordedTitle", defaultValue: "Recorded HTTP review unavailable"),
-                    systemImage: "play.slash", description: Text(owner.error ?? ViewingMessage.recorded))
+                ContentUnavailableView(owner.emptyStateTitle,
+                    systemImage: "play.slash", description: Text(owner.error ??
+                        String(localized: "review.selectFootage", defaultValue: "Select a recording or choose another time in Review.")))
             }
         }
         .onAppear { owner.inlineAttached = true }

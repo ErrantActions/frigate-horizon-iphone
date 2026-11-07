@@ -3,6 +3,23 @@ import Foundation
 public enum RecordedHTTPError: LocalizedError, Sendable {
     case unavailable, invalidContract, invalidWindow, gap, expired, preparationFailed, rangeUnsupported, invalidRange, uncertainCreation
     case emptyWindow(nextTimestamp: Double), searchLimit, unsupportedSource, rejectedCreation
+    public var diagnosticIdentifier: String {
+        switch self {
+        case .unavailable: return "unavailable"
+        case .invalidContract: return "invalid-contract"
+        case .invalidWindow: return "invalid-window"
+        case .gap: return "gap"
+        case .expired: return "expired"
+        case .preparationFailed: return "preparation-failed"
+        case .rangeUnsupported: return "range-unsupported"
+        case .invalidRange: return "invalid-range"
+        case .uncertainCreation: return "uncertain-creation"
+        case .emptyWindow: return "empty-window"
+        case .searchLimit: return "search-limit"
+        case .unsupportedSource: return "unsupported-source"
+        case .rejectedCreation: return "rejected-creation"
+        }
+    }
     public var errorDescription: String? {
         switch self {
         case .unavailable: return String(localized: "review.httpUnavailable", defaultValue: "Recorded HTTP viewing is disabled or unavailable for this camera. Check server readiness and retry. Original downloads remain available.")

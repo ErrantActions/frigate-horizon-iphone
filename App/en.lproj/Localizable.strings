@@ -32,6 +32,11 @@
 "groupPip.renderFailed" = "Group Picture in Picture rendering failed. Return to Live and try again.";
 "groupPip.restoreFailed" = "Open the Live screen to restore the Group PiP cameras.";
 "review.liveCleanupPending" = "Previous live viewer cleanup is unconfirmed. Retry viewer cleanup before starting recorded playback.";
+"review.noFootageTitle" = "No recorded footage after this position";
+"review.playbackFailedTitle" = "Recorded playback failed";
+"review.chooseFootageTitle" = "Choose recorded footage";
+"review.noFootageStatus" = "No recording";
+"review.selectFootage" = "Select a recording or choose another time in Review.";
 "viewer.capacity" = "The server's shared viewing/encoder capacity is in use. Close another viewer before retrying.";
 "viewer.cleanup" = "Local playback stopped, but owned viewer deletion is unconfirmed. Its lease is only a safeguard; retry cleanup before assuming server work ended.";
 "viewer.unknownCreation" = "Viewer creation has no confirmed session identity. Cleanup cannot be confirmed; no creation replay was attempted.";
