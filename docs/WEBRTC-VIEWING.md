@@ -122,7 +122,8 @@ gh workflow run ios.yml --repo ErrantActions/frigate-horizon-iphone --ref main `
 
 No server configuration, camera/recording/storage/notification behavior or media
 transport was changed. No simulator/UI tests or TestFlight upload were run.
-This source update is **not yet included in TestFlight 1038**.
+This source update was not included in TestFlight 1038; it now ships in
+**1039** together with the Group PiP transition repair described below.
 
 ### Loaded-camera selection and Review lifecycle repair
 
@@ -264,10 +265,20 @@ job `128297145056`:
 
 The first checks caught a nested test helper, an inverted CPU drawing
 transform, a preview-host property scope and an SDK protocol parameter mismatch.
-All were corrected; pixel assertions were not weakened. No simulator/UI tests,
-TestFlight upload, server/router/TURN/provider changes or test notifications
-were performed. TestFlight **1038** still predates both this repair and the
-latest Review gap-search fix.
+All were corrected; pixel assertions were not weakened. No simulator/UI tests, server/router/TURN/provider changes or test notifications
+were performed. TestFlight **1038** predates both this repair and the latest
+Review gap-search fix; the owner subsequently explicitly requested native
+release **1039**.
+
+TestFlight **1039**, source `34fd398`, passed
+[release 42340612162](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42340612162),
+job `128307248411`: 416 Core tests, 90 guards, full app/NSE profile validation,
+Release compilation/signing, archive/export/upload. Apple build
+`84db4e76-5c44-458a-bc7c-de5e25911e99` is VALID,
+`usesNonExemptEncryption=false`, IN_BETA_TESTING and included in Owner Testing
+Auto, verified read-only. `APNS_IMAGES_BACKEND_READY=false` and its existing
+timestamp remain unchanged. No external beta submission or protection changes.
+This is distribution verification, not proof of physical PiP/background success.
 
 Changed surfaces:
 [LiveGroupPiPStartup.swift](../Sources/HorizonCore/LiveGroupPiPStartup.swift),
@@ -528,7 +539,17 @@ Normal TLS/ATS, API cookies/write CSRF, audio/mute and fold-aware layout remain.
 Notification renewal preserves the installation's actual camera selection,
 including `camera_ids: []`, confidence policy and private photo behavior.
 
-## Current delivered binary: TestFlight 1038
+## Current delivered binary: TestFlight 1039
+
+The explicit owner request shipped source `34fd398` in
+[release 42340612162](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42340612162):
+416 Core tests, 90 guards and signed app/NSE archive/export/upload passed.
+Apple build `84db4e76-5c44-458a-bc7c-de5e25911e99` is VALID, export compliance
+cleared, IN_BETA_TESTING and available to Owner Testing Auto. It includes the
+Group PiP transition/readiness/CPU rendering repair and bounded Review gap
+search. Actual iPhone pop-out/background/restore still needs a retest.
+
+## Previous delivered binary: TestFlight 1038
 
 The owner-requested
 [release 42327932032](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42327932032)

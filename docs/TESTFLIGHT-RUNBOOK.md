@@ -2,7 +2,8 @@
 
 **Current source: live WebRTC plus capability-gated recorded HTTPS MP4
 architecture.** The owner subsequently explicitly requested TestFlight;
-**1038** is now uploaded, processed and available to Owner Testing Auto, with
+**1039** is now uploaded, processed and available to Owner Testing Auto, with
+Group PiP startup/background repair and bounded Review gap search, alongside
 camera-selection handoff and stable Review playback ownership, alongside
 Group PiP, persistent Live grid, live 422 repair and direct-original HTTP client.
 That authorization is for the native release,
@@ -13,25 +14,28 @@ discovery/ranges, while physical iPhone qualification remains unverified. Do not
 revive HLS, recorded WebRTC or download-URL streaming as a fallback. See
 [WEBRTC-VIEWING.md](WEBRTC-VIEWING.md) for implementation, exact checks and blockers.
 
-## Latest verified release: 1038
+## Latest verified release: 1039
 
-[Run 42327932032](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42327932032),
-job `128267491446`, source `05acc72ab9a71902e6e1f880b22cc6d7d5a220cc`,
-selected build **1038**. It passed **398 Core tests**, **84 guards**,
+[Run 42340612162](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42340612162),
+job `128307248411`, source `34fd398fb8371dc35f8ba4064a4c97ae136a87a3`,
+selected build **1039**. It passed **416 Core tests**, **90 guards**,
 both app/NSE Release compilation and distribution signing, archive, export
 and upload. No simulator/UI tests/previews were run.
 
-Apple build `cc3d63fe-2af7-4221-b946-269b2358d5e9` is **VALID**,
+Apple build `84db4e76-5c44-458a-bc7c-de5e25911e99` is **VALID**,
 `usesNonExemptEncryption=false`, **IN_BETA_TESTING**, and included in
 **Owner Testing Auto** (`2e555dfe-174b-42b5-8b03-83519d7f2fd9`). External
 tester groups/submission were not changed. Processing and group membership
 were verified read-only through App Store Connect.
 
-1038 holds the already decoded grid image while a selected camera upgrades to
-the detail/audio session, stabilizes the native recorded player across loading/
-ready transitions, refreshes Review bounds, and keeps failure diagnostics
-available after teardown. The exact reported phone Review error was not supplied;
-this delivery does not claim that its real-device root cause was reproduced.
+1039 enables automatic inline transition only after explicit Group PiP selection,
+waits for a sized preview and fresh mosaic frame, preserves bounded startup
+ownership before delayed AVKit callbacks, and uses CPU-only mosaic conversion/
+drawing with inactive inline Metal renderers detached. It also includes the
+tested multi-hour Review gap search and semantic failure diagnostics.
+The owner confirmed a prior Review issue was server-side; independent client
+regressions do not imply an app bug caused that server failure. Physical iPhone
+floating-window/background/restore success remains unverified.
 
 Use **Live -> Group PiP** after all selected grid cameras show live video.
 The mosaic reuses those native sessions without duplicate streams; the eager
