@@ -144,12 +144,12 @@ final class LiveGroupPiPMosaicTests: XCTestCase {
             let offset = y * CVPixelBufferGetBytesPerRow(value) + x * 4
             return (Int(base[offset+2]), Int(base[offset+1]))
         }
-        private func pixel(_ value: CVPixelBuffer, x: Int, y: Int) -> (red: Int, green: Int) {
-            CVPixelBufferLockBaseAddress(value, .readOnly)
-            defer { CVPixelBufferUnlockBaseAddress(value, .readOnly) }
-            guard let base = CVPixelBufferGetBaseAddress(value)?.assumingMemoryBound(to: UInt8.self) else { return (0,0) }
-            let at = y * CVPixelBufferGetBytesPerRow(value) + x * 4
-            return (Int(base[at + 2]), Int(base[at + 1]))
-        }
+    }
+    private func pixel(_ value: CVPixelBuffer, x: Int, y: Int) -> (red: Int, green: Int) {
+        CVPixelBufferLockBaseAddress(value, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(value, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(value)?.assumingMemoryBound(to: UInt8.self) else { return (0,0) }
+        let at = y * CVPixelBufferGetBytesPerRow(value) + x * 4
+        return (Int(base[at + 2]), Int(base[at + 1]))
     }
 }

@@ -83,3 +83,8 @@ class TestGroupPiP(unittest.TestCase):
         self.assertIn("converter.groupImage(", renderer)
         self.assertIn("onFirstFrame?()", renderer)
         self.assertIn("active && visible && scenePhase == .active ? rtc.videoTrack : nil", source("App/Views/LiveView.swift"))
+
+    def test_cpu_pixel_test_helper_is_not_a_nested_local_declaration(self):
+        tests = source("Tests/HorizonCoreTests/LiveGroupPiPMosaicTests.swift")
+        self.assertIn("\n    private func pixel(", tests)
+        self.assertNotIn("\n        private func pixel(", tests)
