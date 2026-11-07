@@ -245,7 +245,41 @@ automatic acceptance, exact timeout, cancellation/late callbacks, scene/preview
 detachment, CPU colors/NV12 ranges/crop/rotation and existing mosaic placement.
 The already qualified Review gap-search repair is included in the same source.
 The exact phone startup phase/error was unavailable, so physical pop-out/
-background/restore success is not yet asserted; qualification is recorded below.
+background/restore success is not yet asserted.
+
+Source **`9ed4ce6`** passed
+[unsigned qualification 42337340963](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42337340963),
+job `128297145056`:
+
+| Exact check | Result |
+| --- | --- |
+| `swift test` | **416 tests, 0 failures** |
+| `python3 -m unittest discover -s tools/tests` | **90 committed guards passed** |
+| `python -m unittest discover -s tools\tests -p test_group_pip.py` | **7 focused guards passed** |
+| Generic iOS-device Release `CODE_SIGNING_ALLOWED=NO build` | **BUILD SUCCEEDED** |
+| Armed-before-callback retention, readiness gates, auto acceptance, timeout/cancel | **Passed Core state regressions** |
+| CPU NV12 video/full range and BT.709, BGRA mosaic positions, crop/0/90/180/270 rotation | **Passed native macOS pixel fixtures** |
+| Review code-4/bounded multi-hour/DST gap handling | **Passed retained regressions** |
+| Physical iPhone floating-window/background/restore/power acceptance | **Not run** |
+
+The first checks caught a nested test helper, an inverted CPU drawing
+transform, a preview-host property scope and an SDK protocol parameter mismatch.
+All were corrected; pixel assertions were not weakened. No simulator/UI tests,
+TestFlight upload, server/router/TURN/provider changes or test notifications
+were performed. TestFlight **1038** still predates both this repair and the
+latest Review gap-search fix.
+
+Changed surfaces:
+[LiveGroupPiPStartup.swift](../Sources/HorizonCore/LiveGroupPiPStartup.swift),
+[LiveGroupPiPImage.swift](../Sources/HorizonCore/LiveGroupPiPImage.swift),
+[LiveGroupPiPMosaic.swift](../Sources/HorizonCore/LiveGroupPiPMosaic.swift),
+[LiveGroupPictureInPictureController.swift](../App/Media/LiveGroupPictureInPictureController.swift),
+[RTCGroupPiPRenderer.swift](../App/Media/RTCGroupPiPRenderer.swift),
+[RTCViewerRendering.swift](../App/Media/RTCViewerRendering.swift),
+[LiveGroupPiPPreview.swift](../App/Views/LiveGroupPiPPreview.swift),
+and [LiveView.swift](../App/Views/LiveView.swift), plus root/scene hooks,
+localization and exact regression tests. The user must still explicitly select
+Group PiP; ordinary app departure does not arm a group automatically.
 
 **TestFlight 1037 is processed and available to Owner Testing Auto.** Open
 Live, wait for the grid cameras to show video, then tap **Group PiP**.
