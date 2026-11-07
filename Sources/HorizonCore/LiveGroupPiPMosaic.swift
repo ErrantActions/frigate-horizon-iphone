@@ -61,8 +61,8 @@ public final class LiveGroupPiPMosaic {
             let height = CGFloat(rotated ? frame.image.width : frame.image.height)
             let scale = min(tile.width / width, tile.height / height)
             cg.saveGState()
-            cg.translateBy(x: tile.midX, y: bounds.height - tile.midY)
-            cg.scaleBy(x: scale, y: -scale)
+            cg.translateBy(x: tile.midX, y: tile.midY)
+            cg.scaleBy(x: scale, y: scale)
             cg.rotate(by: -CGFloat(frame.rotation) * .pi / 180)
             cg.draw(frame.image, in: CGRect(x: -CGFloat(frame.image.width) / 2,
                 y: -CGFloat(frame.image.height) / 2,
@@ -73,7 +73,7 @@ public final class LiveGroupPiPMosaic {
             let tile = geometry.tile(at: index)
             let label = images[index] == nil ? names[index] + " - " + unavailable : names[index]
             cg.saveGState()
-            let strip = CGRect(x: tile.minX + 2, y: bounds.height - tile.minY - min(28, tile.height) - 2,
+            let strip = CGRect(x: tile.minX + 2, y: tile.minY + 2,
                 width: max(0, tile.width - 4), height: min(28, tile.height))
             cg.clip(to: strip)
             cg.setFillColor(CGColor(gray: 0, alpha: 0.8)); cg.fill(strip)
@@ -81,8 +81,7 @@ public final class LiveGroupPiPMosaic {
                 NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Helvetica" as CFString, 16, nil),
                 NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 1, alpha: 1)]
             let line = CTLineCreateWithAttributedString(NSAttributedString(string: label, attributes: attributes))
-            cg.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
-            cg.textPosition = CGPoint(x: strip.minX + 6, y: strip.minY + 20)
+            cg.textPosition = CGPoint(x: strip.minX + 6, y: strip.minY + 7)
             CTLineDraw(line, cg)
             cg.restoreGState()
         }

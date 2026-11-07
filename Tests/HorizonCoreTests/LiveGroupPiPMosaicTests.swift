@@ -3,8 +3,8 @@ import CoreVideo
 @testable import HorizonCore
 
 final class LiveGroupPiPMosaicTests: XCTestCase {
-    func testCPUConversionSupportsBothNativeNV12Ranges() throws {
-        for full in [true,false] {
+    func testCPUConversionSupportsNativeNV12RangesAndBT709() throws {
+        for (full, bt709) in [(true,false),(false,false),(false,true)] {
             var buffer: CVPixelBuffer?
             XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 64, 64,
                 full ? kCVPixelFormatType_420YpCbCr8BiPlanarFullRange : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
@@ -14,15 +14,19 @@ final class LiveGroupPiPMosaicTests: XCTestCase {
             let y = try XCTUnwrap(CVPixelBufferGetBaseAddressOfPlane(value, 0)?.assumingMemoryBound(to: UInt8.self))
             let uv = try XCTUnwrap(CVPixelBufferGetBaseAddressOfPlane(value, 1)?.assumingMemoryBound(to: UInt8.self))
             for row in 0..<64 {
-                for col in 0..<64 { y[row * CVPixelBufferGetBytesPerRowOfPlane(value, 0) + col] = full ? 76 : 81 }
+                for col in 0..<64 { y[row * CVPixelBufferGetBytesPerRowOfPlane(value, 0) + col] = full ? 76 : (bt709 ? 63 : 81) }
             }
             for row in 0..<32 {
                 for col in 0..<32 {
                     let at = row * CVPixelBufferGetBytesPerRowOfPlane(value, 1) + col * 2
-                    uv[at] = full ? 85 : 90; uv[at + 1] = full ? 255 : 240
+                    uv[at] = full ? 85 : (bt709 ? 102 : 90); uv[at + 1] = full ? 255 : 240
                 }
             }
             CVPixelBufferUnlockBaseAddress(value, [])
+            if bt709 {
+                CVBufferSetAttachment(value, kCVImageBufferYCbCrMatrixKey,
+                    kCVImageBufferYCbCrMatrix_ITU_R_709_2, .shouldPropagate)
+            }
             let rendered = try LiveGroupPiPMosaic().render(pixels: [value], names: ["Front"], unavailable: "Unavailable")
             let color = pixel(rendered, x: 480, y: 270)
             XCTAssertGreaterThan(color.red, 220)
@@ -47,6 +51,15 @@ final class LiveGroupPiPMosaicTests: XCTestCase {
         let rotated = try composer.render(images: [LiveGroupPiPImage(buffer: value, rotation: 180)], names: ["Front"], unavailable: "Unavailable")
         XCTAssertGreaterThan(pixel(rotated, x: 480, y: 135).green, 220)
         XCTAssertGreaterThan(pixel(rotated, x: 480, y: 405).red, 220)
+        for rotation in [90,270] {
+            let sideways = try composer.render(images: [LiveGroupPiPImage(buffer: value, rotation: rotation)], names: ["Front"], unavailable: "Unavailable")
+            let red = pixel(sideways, x: rotation == 90 ? 560 : 400, y: 270)
+            let green = pixel(sideways, x: rotation == 90 ? 400 : 560, y: 270)
+            XCTAssertGreaterThan(red.red, 220); XCTAssertGreaterThan(green.green, 220)
+        }
+        let crop = try LiveGroupPiPImage(buffer: value, crop: CGRect(x: 0, y: 0, width: 160, height: 45))
+        let cropped = try composer.render(images: [crop], names: ["Front"], unavailable: "Unavailable")
+        XCTAssertGreaterThan(pixel(cropped, x: 480, y: 270).red, 220)
     }
     func testCPUImageCroppingAndUnsupportedRotationAreExplicit() throws {
         let value = try buffer(red: 255, green: 0)
