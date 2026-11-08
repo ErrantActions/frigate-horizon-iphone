@@ -111,7 +111,35 @@ Changed surfaces:
 [HorizonRecordedHTTPClient.swift](../App/Networking/HorizonRecordedHTTPClient.swift),
 [RecordedMP4Reader.swift](../Sources/HorizonCore/RecordedMP4Reader.swift),
 plus root cookie-persistence and media UI/PiP hooks, connection notices,
-localization and regressions. Qualification is recorded after native tests.
+localization and regressions.
+
+Source **`01678e8`** passed
+[unsigned qualification 42431551972](https://github.com/ErrantActions/frigate-horizon-iphone/actions/runs/42431551972),
+job `128581374888`:
+
+| Exact command/check | Result |
+| --- | --- |
+| `swift test` | **425 tests, 0 failures** |
+| `python3 -m unittest discover -s tools/tests` | **95 committed guards passed** |
+| `python -m unittest discover -s tools\tests -p test_session_renewal.py` | **5 focused guards passed** |
+| Generic iOS-device Release `CODE_SIGNING_ALLOWED=NO build` | **BUILD SUCCEEDED** |
+| Supported 202 auth cookie rotation and saved-cookie round trip | **Passed native URLProtocol fixtures** |
+| 32 concurrent checks, failure coalescing, cancelled tile vs shared work | **Passed Core regressions** |
+| 401/403 distinction, expired/malformed identity, cookie origin/path/expiry | **Passed regressions** |
+| Per-range current-cookie provider without replacing media | **Passed native MP4 fixture** |
+| Actual iPhone login-prompt frequency / long-running server renewal | **Not measured** |
+
+```powershell
+gh workflow run ios.yml --repo ErrantActions/frigate-horizon-iphone --ref main `
+  -f confirm_paid_run=true -f include_compatibility=false `
+  -f device_build_only=true -f upload_artifacts=false
+```
+
+Changed-cookie persistence notifications are deduplicated under a lock before
+main-actor delivery so one successful renewal does not cause all grid waiters
+to rewrite the Keychain/image generation. Tests and compilation qualify the
+client integration, not production-cookie/device success. No simulator/UI
+tests, TestFlight upload, server settings or test notifications were performed.
 TestFlight 1039 still predates this source change.
 
 ### Reported Review failure code 4: bounded gap search
