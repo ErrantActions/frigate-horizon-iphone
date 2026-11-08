@@ -27,11 +27,14 @@ final class ViewerTaskDelegate: NSObject, URLSessionTaskDelegate {
 final class HorizonAPI {
     let address: ServerAddress
     let session: URLSession
+    private let renewal: SessionRenewalCoordinator
+    private var viewingUsername: String?
     private(set) var viewingAccountKey: String?
     func bindViewingAccount(username: String) throws {
         let key = HorizonAccountScope.key(server: address.url.absoluteString, username: username)
         if let existing = viewingAccountKey, existing != key { throw HorizonError.unauthorized }
         viewingAccountKey = key
+        viewingUsername = username
     }
 
     init(
@@ -52,10 +55,23 @@ final class HorizonAPI {
             configuration: configuration,
             delegate: SameOriginDelegate(address: address), delegateQueue: nil
         )
+        renewal = SessionRenewalCoordinator(session: session, address: address)
     }
 
     var cookies: [HTTPCookie] {
         SavedSession.cookiesForMedia(session.configuration.httpCookieStorage?.cookies ?? [], address: address)
+    }
+    func verifySession(force: Bool = false, expectedUsername: String? = nil) async throws {
+        let before = SavedSession(server: address.url.absoluteString, cookies: cookies.map(SavedSession.SavedCookie.init))
+        let receipt = try await renewal.check(force: force)
+        if let expected = expectedUsername ?? viewingUsername, receipt.username != expected {
+            throw HorizonError.message(String(localized: "auth.accountChanged", defaultValue: "Session renewal returned a different account. Disconnect before changing accounts."))
+        }
+        let after = SavedSession(server: address.url.absoluteString, cookies: cookies.map(SavedSession.SavedCookie.init))
+        if before != after { notifySessionCookiesChanged() }
+    }
+    private func notifySessionCookiesChanged() {
+        Task { @MainActor in NotificationCenter.default.post(name: .horizonSessionCookiesChanged, object: self) }
     }
 
     func close() { session.invalidateAndCancel() }
@@ -159,6 +175,7 @@ final class HorizonAPI {
         guard ["frigate", "nginx", "go2rtc"].contains(service) else {
             throw HorizonError.message("Choose a supported log service.")
         }
+        if viewingAccountKey != nil { try await verifySession() }
         let configuration = session.configuration
         configuration.timeoutIntervalForResource = 86400
         let streaming = URLSession(configuration: configuration,
@@ -184,6 +201,7 @@ final class HorizonAPI {
         guard address.hasSameOrigin(as: url), ["mp4", "jpg", "zip"].contains(fileExtension) else {
             throw HorizonError.invalidMediaPath
         }
+        if viewingAccountKey != nil { try await verifySession() }
         let configuration = session.configuration
         configuration.timeoutIntervalForResource = 600
         configuration.timeoutIntervalForRequest = 60
@@ -192,7 +210,8 @@ final class HorizonAPI {
         defer { downloader.invalidateAndCancel() }
         let (temporary, response) = try await downloader.download(from: url)
         guard let response = response as? HTTPURLResponse else { throw HorizonError.unexpectedResponse }
-        if response.statusCode == 401 || response.statusCode == 403 { throw HorizonError.unauthorized }
+        if response.statusCode == 401 { throw HorizonError.unauthorized }
+        if response.statusCode == 403 { throw HorizonError.forbidden }
         guard (200..<300).contains(response.statusCode) else { throw HorizonError.http(response.statusCode) }
         let expectedTypes: [String: Set<String>] = [
             "mp4": ["video/mp4", "application/octet-stream"],
@@ -221,18 +240,36 @@ final class HorizonAPI {
 
     private func dataWithHTTPResponse(_ request: URLRequest,
                                       distinguishCameraDenial: Bool = false, viewerRequest: Bool = false) async throws -> (data: Data, response: HTTPURLResponse) {
-        let (bytes, response) = try await session.data(for: request, delegate: viewerRequest ? ViewerTaskDelegate() : nil)
+        if viewingAccountKey != nil { try await verifySession() }
+        var (bytes, response) = try await session.data(for: request, delegate: viewerRequest ? ViewerTaskDelegate() : nil)
+        if let http = response as? HTTPURLResponse, http.statusCode == 401, viewingAccountKey != nil {
+            try await verifySession(force: true)
+            // Writes/owned creation are never replayed, even when the login is healthy.
+            if (request.httpMethod ?? "GET") == "GET" {
+                (bytes, response) = try await session.data(for: request, delegate: viewerRequest ? ViewerTaskDelegate() : nil)
+            }
+        }
         guard let response = response as? HTTPURLResponse else { throw HorizonError.unexpectedResponse }
+        if response.value(forHTTPHeaderField: "Set-Cookie") != nil {
+            notifySessionCookiesChanged()
+        }
         if response.statusCode == 403 {
             if viewerRequest {
                 let detail = ViewerValidationResponse.detail(data: bytes, mimeType: response.mimeType)
                 if detail.lowercased().contains("csrf") {
                     throw HorizonError.server(status: 403, message: detail)
                 }
+
             }
             throw HorizonError.forbidden
         }
-        if response.statusCode == 401 { throw HorizonError.unauthorized }
+        if response.statusCode == 401 {
+            if viewingAccountKey != nil, viewerRequest {
+                throw HorizonError.server(status: 401, message: String(localized: "auth.viewerRejected",
+                    defaultValue: "This viewer session was rejected while the account session is valid. Reopen the camera or recording; signing in again may not be necessary."))
+            }
+            throw HorizonError.unauthorized
+        }
         if viewerRequest && response.statusCode == 422 {
             throw HorizonError.server(status: 422,
                 message: ViewerValidationResponse.detail(data: bytes, mimeType: response.mimeType))
@@ -255,4 +292,8 @@ final class HorizonAPI {
         if response.mimeType == "text/html" { throw HorizonError.unexpectedResponse }
         return (bytes, response)
     }
+}
+
+extension Notification.Name {
+    static let horizonSessionCookiesChanged = Notification.Name("Horizon.sessionCookiesChanged")
 }

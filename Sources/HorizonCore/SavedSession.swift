@@ -16,6 +16,14 @@ public struct SavedSession: Codable, Equatable, Sendable {
         // Retain original cookie paths; the receiving private jar selects them for each child URL.
         cookies.filter { SavedCookie($0).restore(for: address) != nil }
     }
+    public static func cookiesForRequest(_ cookies: [HTTPCookie], address: ServerAddress, url: URL) -> [HTTPCookie] {
+        guard address.hasSameOrigin(as: url) else { return [] }
+        return cookiesForMedia(cookies, address: address).filter { cookie in
+            let path = cookie.path
+            return (!cookie.isSecure || url.scheme == "https") && path.hasPrefix("/") &&
+                (url.path == path || url.path.hasPrefix(path.hasSuffix("/") ? path : path + "/"))
+        }.sorted { $0.path.count > $1.path.count }
+    }
 
     public struct SavedCookie: Codable, Equatable, Sendable {
         public let name: String

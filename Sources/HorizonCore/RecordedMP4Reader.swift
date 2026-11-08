@@ -45,13 +45,14 @@ private final class MP4Cookies: @unchecked Sendable {
         self.address = address
         for cookie in initial { cookies[Key(cookie)] = cookie }
     }
+    func replace(with current: [HTTPCookie]) {
+        lock.lock(); defer { lock.unlock() }
+        cookies.removeAll()
+        for cookie in current { cookies[Key(cookie)] = cookie }
+    }
     func headers(for url: URL) -> [String: String] {
         lock.lock(); let values = Array(cookies.values); lock.unlock()
-        let scoped = SavedSession.cookiesForMedia(values, address: address).filter { cookie in
-            let path = cookie.path
-            return (!cookie.isSecure || url.scheme == "https") && path.hasPrefix("/") &&
-                (url.path == path || url.path.hasPrefix(path.hasSuffix("/") ? path : path + "/"))
-        }.sorted { $0.path.count > $1.path.count }
+        let scoped = SavedSession.cookiesForRequest(values, address: address, url: url)
         return HTTPCookie.requestHeaderFields(with: scoped)
     }
     func receive(_ response: HTTPURLResponse) {
@@ -156,16 +157,21 @@ public final class AuthenticatedRecordedMP4Reader: @unchecked Sendable {
     private let session: URLSession
     private let delegate: MP4ReadDelegate
     private let cookieStore: MP4Cookies
+    private let cookieProvider: (@Sendable () async throws -> [HTTPCookie])?
     public convenience init(mediaURL: URL, info: RecordedHTTPMediaInfo, policy: RecordedHTTPResourcePolicy,
-                cookies: [HTTPCookie], configuration: URLSessionConfiguration = .ephemeral) throws {
+                cookies: [HTTPCookie], configuration: URLSessionConfiguration = .ephemeral,
+                cookieProvider: (@Sendable () async throws -> [HTTPCookie])? = nil) throws {
         try info.validate()
-        try self.init(mediaURL: mediaURL, verificationLength: info.length, policy: policy, cookies: cookies, configuration: configuration)
+        try self.init(mediaURL: mediaURL, verificationLength: info.length, policy: policy, cookies: cookies,
+            configuration: configuration, cookieProvider: cookieProvider)
     }
     public init(mediaURL: URL, verificationLength: Int64, policy: RecordedHTTPResourcePolicy,
-                cookies: [HTTPCookie], configuration: URLSessionConfiguration = .ephemeral) throws {
+                cookies: [HTTPCookie], configuration: URLSessionConfiguration = .ephemeral,
+                cookieProvider: (@Sendable () async throws -> [HTTPCookie])? = nil) throws {
         self.mediaURL = try policy.validate(mediaURL)
         guard verificationLength > 0 else { throw RecordedHTTPError.rangeUnsupported }
         length = verificationLength
+        self.cookieProvider = cookieProvider
         let cookieStore = MP4Cookies(cookies, address: policy.address)
         self.cookieStore = cookieStore
         delegate = MP4ReadDelegate(cookies: cookieStore)
@@ -179,6 +185,9 @@ public final class AuthenticatedRecordedMP4Reader: @unchecked Sendable {
     }
     public func read(_ range: RecordedMP4Range) async throws -> Data {
         if range.offset >= length { return Data() }
+        try Task.checkCancellation()
+        if let cookieProvider { cookieStore.replace(with: try await cookieProvider()) }
+        try Task.checkCancellation()
         var request = URLRequest(url: mediaURL, cachePolicy: .reloadIgnoringLocalCacheData)
         // URLSession protocol/custom-loader requests must carry observable auth themselves.
         request.httpShouldHandleCookies = false

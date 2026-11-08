@@ -199,8 +199,10 @@ final class RecordingPlayer: ObservableObject {
             }
             notice = explanation
         }
+        let authenticatedClient = try HorizonRecordedHTTPClient(api: api)
         let reader = try AuthenticatedRecordedMP4Reader(mediaURL: url, info: ready.info,
-            policy: RecordedHTTPResourcePolicy(address: api.address), cookies: api.cookies)
+            policy: RecordedHTTPResourcePolicy(address: api.address), cookies: api.cookies,
+            cookieProvider: { try await authenticatedClient.mediaCookies() })
         let asset = try RecordedMP4Asset(reader: reader) { [weak self] failure in
             Task { @MainActor in
                 guard let self, self.mediaGeneration == token else { return }
@@ -552,6 +554,7 @@ final class RecordedViewingRegistry: ObservableObject {
     @Published private(set) var error: String?
     static func add(_ player: RecordingPlayer) { players.add(player) }
     static func ownsPiP(_ player: RecordingPlayer) -> Bool { pip === player }
+    static var hasPictureInPicture: Bool { pip != nil }
     static func ownsPiP(_ player: RecordingPlayer, token: UUID) -> Bool { pip === player && pipToken == token }
     static func retainPiP(_ player: RecordingPlayer, token: UUID) {
         guard player.belongs(to: scopedAPI, cameras: scopedCameras), player.player.currentItem?.status == .readyToPlay else {

@@ -85,7 +85,7 @@ class TestWebRTCViewing(unittest.TestCase):
                       "data.count > read.range.count - read.data.count"]:
             self.assertTrue(token in reader, token)
         self.assertTrue("HTTPCookie.requestHeaderFields(with: scoped)" in reader)
-        self.assertTrue("SavedSession.cookiesForMedia(values, address: address)" in reader)
+        self.assertTrue("SavedSession.cookiesForRequest(values, address: address, url: url)" in reader)
         self.assertTrue("AVURLAssetHTTPHeaderFieldsKey" not in asset + reader)
         self.assertTrue("serverTrust" not in asset + reader)
 

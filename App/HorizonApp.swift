@@ -33,6 +33,11 @@ struct HorizonApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .horizonMediaAuthenticationExpired)) { notification in
                 if let api = notification.object as? HorizonAPI { model.reportSessionExpiry(from: api) }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .horizonSessionCookiesChanged)) { notification in
+                guard let client = notification.object as? HorizonAPI else { return }
+                do { try model.persistSession(from: client) }
+                catch { model.reportPersistenceFailure(error) }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .horizonMediaCleanupFailure)) { notification in
                 if let message = notification.object as? String { model.error = message }
             }

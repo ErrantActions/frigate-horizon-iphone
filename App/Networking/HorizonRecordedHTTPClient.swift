@@ -37,4 +37,9 @@ final class HorizonRecordedHTTPClient: RecordedHTTPControlClient, @unchecked Sen
         }
         return RecordedHTTPControlResponse(data: result.data, status: result.response.statusCode, headers: headers)
     }
+    func mediaCookies() async throws -> [HTTPCookie] {
+        guard api.viewingAccountKey == account else { throw HorizonError.unauthorized }
+        try await api.verifySession()
+        return api.cookies
+    }
 }

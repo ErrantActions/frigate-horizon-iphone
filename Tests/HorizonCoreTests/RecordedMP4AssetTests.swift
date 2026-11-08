@@ -70,6 +70,34 @@ private struct MP4HeadFixtureClient: RecordedHTTPControlClient {
 }
 
 final class RecordedMP4AssetTests: XCTestCase {
+    func testEveryRangeCanUseRotatedCredentialsWithoutReplacingTheNativeAsset() async throws {
+        actor RotatingFixtureCookies {
+            let domain: String
+            var count = 0
+            init(domain: String) { self.domain = domain }
+            func next() throws -> [HTTPCookie] {
+                count += 1
+                return [try XCTUnwrap(HTTPCookie(properties: [.name:"session",.value:"fixture-only",
+                    .domain:domain,.path:"/proxy/api",.secure:"TRUE",.expires:Date().addingTimeInterval(60)]))]
+            }
+        }
+        let body = Data(repeating: 0, count: 100), url = MP4FixtureProtocol.install(Data(repeating: 0, count: 100))
+        defer { MP4FixtureProtocol.remove(url) }
+        let rotation = RotatingFixtureCookies(domain: "fixture.invalid")
+        let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [MP4FixtureProtocol.self]
+        let reader = try AuthenticatedRecordedMP4Reader(mediaURL: url,
+            info: .init(length: 100, complete: true, immutable: true, fastStart: true, rangeSupported: true),
+            policy: RecordedHTTPResourcePolicy(address: ServerAddress("https://fixture.invalid/proxy")),
+            cookies: [], configuration: configuration, cookieProvider: { try await rotation.next() })
+        defer { reader.close() }
+        _ = try await reader.read(RecordedMP4Range(offset: 0, count: 10))
+        _ = try await reader.read(RecordedMP4Range(offset: 20, count: 10))
+        let count = await rotation.count
+        XCTAssertEqual(count, 2)
+        XCTAssertTrue(MP4FixtureProtocol.requests(for: url).allSatisfy {
+            $0.value(forHTTPHeaderField: "Cookie") == "session=fixture-only"
+        })
+    }
     private func reader(_ url: URL, body: Data, expiredCookie: Bool = false) throws -> AuthenticatedRecordedMP4Reader {
         let cookie = try XCTUnwrap(HTTPCookie(properties: [.domain:"fixture.invalid", .path:"/proxy/api",
             .name:"session", .value:"fixture-only", .secure:"TRUE",

@@ -362,7 +362,9 @@ public struct ViewerOwnershipState: Sendable {
 
 public func viewingFailureMessage(_ error: Error) -> String {
     switch (error as? HorizonError)?.httpStatusCode {
-    case 401: return String(localized: "viewer.auth", defaultValue: "Sign in again to renew this account's viewing session.")
+    case 401:
+        if let failure = error as? HorizonError, case .server = failure { return failure.localizedDescription }
+        return String(localized: "viewer.auth", defaultValue: "Sign in again to renew this account's viewing session.")
     case 403:
         if let failure = error as? HorizonError, case .server(_, let detail) = failure, detail.lowercased().contains("csrf") {
             return failure.localizedDescription

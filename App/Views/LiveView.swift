@@ -414,7 +414,8 @@ struct LiveVideoView: View {
     private var rtc: OwnedWebRTCViewer { playback.rtcViewer }
     private var allowedCamera: HorizonCamera? { model.cameras.first { $0.id == camera.id } }
     private var playbackEnabled: Bool { allowedCamera?.settings.enabled == true }
-    private var needsReauthentication: Bool { playback.needsReauthentication || rtc.needsReauthentication }
+    private var reportedAuthFailure: Bool { playback.needsReauthentication || rtc.needsReauthentication }
+    private var needsReauthentication: Bool { reportedAuthFailure && model.connectionIssue?.httpStatus == 401 }
     private var playbackQuality: LivePlaybackQuality? {
         nil
     }
@@ -545,7 +546,7 @@ struct LiveVideoView: View {
             onVideoReady?(value)
         }
         .onChange(of: playbackError, initial: true) { _, value in onPlaybackFailure?(value) }
-        .onChange(of: needsReauthentication, initial: true) { _, needed in
+        .onChange(of: reportedAuthFailure, initial: true) { _, needed in
             if needed { model.reportSessionExpiry(from: api) }
         }
         .sheet(isPresented: $showReauthentication) {

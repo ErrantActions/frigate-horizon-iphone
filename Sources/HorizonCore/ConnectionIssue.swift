@@ -2,7 +2,7 @@ import Foundation
 
 public struct ConnectionIssue: Equatable, Sendable {
     public enum Kind: String, Sendable {
-        case invalidAddress, authentication, offline, dns, unreachable, timedOut
+        case invalidAddress, authentication, accessDenied, offline, dns, unreachable, timedOut
         case certificate, secureConnection, serverUnavailable, rateLimited
         case unexpectedResponse, cancelled, other
     }
@@ -20,7 +20,8 @@ public struct ConnectionIssue: Equatable, Sendable {
             if let status = failure.httpStatusCode {
                 let kind: Kind
                 switch status {
-                case 401, 403: kind = .authentication
+                case 401: kind = .authentication
+                case 403: kind = .accessDenied
                 case 408, 504: kind = .timedOut
                 case 429: kind = .rateLimited
                 case 500...599: kind = .serverUnavailable
@@ -78,6 +79,7 @@ public struct ConnectionIssue: Equatable, Sendable {
         switch kind {
         case .invalidAddress: return "Check the server address"
         case .authentication: return "Sign in again"
+        case .accessDenied: return String(localized: "auth.accessDenied", defaultValue: "Access denied")
         case .offline: return "No network connection"
         case .dns: return "Server name not found"
         case .unreachable: return "Connection interrupted"
@@ -98,6 +100,8 @@ public struct ConnectionIssue: Equatable, Sendable {
             return "Use the server root, including its port or proxy base path, without /api, credentials or query parameters."
         case .authentication:
             return "Your session, credentials or account access may have changed. Sign in with your current Frigate account. Saved camera groups and layouts are kept."
+        case .accessDenied:
+            return String(localized: "auth.accessGuidance", defaultValue: "The server denied this request (HTTP 403). Check camera permissions or CSRF/proxy requirements; this is not proof that your login expired.")
         case .offline:
             return "Check Wi-Fi, cellular, VPN and local-network access, then retry. You do not need to forget your saved session."
         case .dns:

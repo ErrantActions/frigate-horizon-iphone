@@ -53,7 +53,7 @@ final class ConnectionIssueTests: XCTestCase {
 
     func testHTTPFailuresAreNotMistakenForAnOfflineDevice() {
         let cases: [(Int, ConnectionIssue.Kind)] = [
-            (401, .authentication), (403, .authentication), (404, .unexpectedResponse),
+            (401, .authentication), (403, .accessDenied), (404, .unexpectedResponse),
             (408, .timedOut), (429, .rateLimited), (500, .serverUnavailable),
             (502, .serverUnavailable), (503, .serverUnavailable), (504, .timedOut),
             (409, .other),
@@ -71,6 +71,13 @@ final class ConnectionIssueTests: XCTestCase {
         XCTAssertEqual(issue.kind, .authentication)
         XCTAssertFalse(issue.allowsSavedSessionRetry)
         XCTAssertEqual(issue.httpStatus, 401)
+    }
+    func testPermissionDenialDoesNotRecommendSigningInAgain() {
+        let issue = ConnectionIssue(error: HorizonError.forbidden)
+        XCTAssertEqual(issue.kind, .accessDenied)
+        XCTAssertEqual(issue.httpStatus, 403)
+        XCTAssertFalse(issue.title.contains("Sign in"))
+        XCTAssertTrue(issue.guidance.contains("not proof"))
     }
 
     func testCertificateFailureNeverSuggestsWeakeningTrust() {

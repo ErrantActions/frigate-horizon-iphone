@@ -57,6 +57,63 @@ the native 1035 release recorded below. Server deployment remains out of scope.
 
 ## Live implementation retained
 
+### Session renewal and repeated sign-in prompts
+
+The owner reported frequent sign-in requests on TestFlight 1039. Source
+inspection found no call to the supported
+[Frigate `/auth` endpoint](https://github.com/ErrantActions/Frigate-Horizon/blob/1f39f979ccc845e0bc18c05856b98a8138c6974e/frigate/api/auth.py).
+That authenticated cookie endpoint returns **202, empty body**, remote-user/
+role headers and a renewed Set-Cookie when a still-valid session reaches the
+server's refresh window. Config/profile refresh alone is not native renewal.
+The published defaults are 24-hour sessions and a 30-minute refresh window;
+the owner's configured values have not been read or changed.
+
+The client now:
+
+- Calls configured-origin/proxy-base `GET /api/auth` on restore/activation and
+  before bound API requests, using existing secure cookie session storage and
+  normal TLS. It checks returned account identity before using rotated cookies.
+  Redirects, foreign origins and invented password/token endpoints are absent.
+- Coordinates concurrent grid/control checks through one renewal task.
+  Successful checks have a short cache; forced recovery and failures only
+  coalesce for one second. One tile's cancellation does not cancel other
+  viewers' shared auth request, but that cancelled caller cannot continue work.
+- Checks at 30-second intervals only while foreground or intentionally active
+  live/group/recorded PiP owns playback. Ordinary inactive screens don't get
+  indefinite background work. Client/profile switch and logout cancel the loop.
+- Persists changed cookies into the current exact-address profile and device-only
+  Keychain, refreshing the private image-cookie bridge without registering a
+  device or changing saved notification cameras/confidence/photo preferences.
+- Lets subsequent authenticated MP4 range reads obtain the latest account
+  cookies instead of remaining tied to an asset-start snapshot. Session identity,
+  resource scope, bounded reads, redirect denial and cancellation remain.
+- On 401, verifies the supported session once; only GET requests can retry once.
+  POST/PATCH/DELETE/viewer creation are never replayed automatically.
+  A media-only rejected session with a healthy account offers reopening the
+  viewer rather than unconditional password entry. Global sign-in state is
+  set only after account verification fails.
+- Treats 403 as access/CSRF denial, not proof of an expired session. Existing
+  app-level notices continue surfacing network, certificate, persistence and
+  rejected-identity errors rather than masking them as successful renewal.
+
+No passwords are saved and no server session length/refresh policy is changed.
+Expired sessions cannot be refreshed by this published endpoint: after a long
+idle period beyond expiry, password changes, account revocation or server auth
+reset, signing in remains necessary. The app does not mint tokens, extend
+cookie lifetimes, reset notification opt-outs or silently bypass that policy.
+Real-iPhone long-running/idle-resume prompt frequency remains to be measured.
+
+Changed surfaces:
+[SessionRenewalCoordinator.swift](../Sources/HorizonCore/SessionRenewalCoordinator.swift),
+[SavedSession.swift](../Sources/HorizonCore/SavedSession.swift),
+[HorizonAPI.swift](../App/Networking/HorizonAPI.swift),
+[AppModel.swift](../App/AppModel.swift),
+[HorizonRecordedHTTPClient.swift](../App/Networking/HorizonRecordedHTTPClient.swift),
+[RecordedMP4Reader.swift](../Sources/HorizonCore/RecordedMP4Reader.swift),
+plus root cookie-persistence and media UI/PiP hooks, connection notices,
+localization and regressions. Qualification is recorded after native tests.
+TestFlight 1039 still predates this source change.
+
 ### Reported Review failure code 4: bounded gap search
 
 The owner supplied build 1038 diagnostics:

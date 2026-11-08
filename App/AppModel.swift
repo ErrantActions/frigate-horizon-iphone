@@ -20,6 +20,8 @@ final class AppModel: ObservableObject {
     private var profilesLoaded = false
     private let profilesStorageKey = "serverProfiles.v1"
     private var connectionGeneration = UUID()
+    private var sessionMaintenance: Task<Void, Never>?
+    private var expiryVerification: Task<Void, Never>?
 
     var canRetrySavedConnection: Bool {
         api == nil && savedServerAddress != nil
@@ -149,7 +151,53 @@ final class AppModel: ObservableObject {
 
     func reportSessionExpiry(from client: HorizonAPI) {
         guard api === client, !isConnecting, connectionIssue?.kind != .authentication else { return }
-        recordConnectionFailure(HorizonError.unauthorized, generation: connectionGeneration)
+        guard expiryVerification == nil else { return }
+        let generation = connectionGeneration
+        let username = profile?.username
+        expiryVerification = Task {
+            defer { if connectionGeneration == generation { expiryVerification = nil } }
+            do {
+                try await client.verifySession(force: true, expectedUsername: username)
+                guard api === client, connectionGeneration == generation else { return }
+                if connectionIssue?.httpStatus == 401 { connectionIssue = nil; error = nil }
+            } catch {
+                guard api === client, connectionGeneration == generation else { return }
+                recordConnectionFailure(error, generation: generation)
+            }
+        }
+    }
+    func persistSession(from client: HorizonAPI) throws {
+        guard api === client, let profile, client.viewingAccountKey != nil else { return }
+        let username = profile.username
+        if let selection = serverProfiles.selection {
+            let address = try serverProfiles.address(for: selection)
+            guard address == client.address else { throw HorizonError.invalidAddress }
+            try SessionVault.saveProfile(selection.profileID, username: username,
+                session: SavedSession(server: address.url.absoluteString, cookies: client.cookies.map(SavedSession.SavedCookie.init)))
+        }
+        try SessionVault.save(client)
+        NativePushController.shared.refreshImageSession(api: client, username: username, allowedCameraIDs: profile.allowedCameras)
+    }
+    func reportPersistenceFailure(_ failure: Error) { error = failure.localizedDescription }
+    private func startSessionMaintenance(using client: HorizonAPI) {
+        sessionMaintenance?.cancel()
+        sessionMaintenance = Task { [weak self, weak client] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                guard let self, let client, self.api === client else { return }
+                guard !self.isConnecting, self.connectionIssue?.httpStatus != 401,
+                      UIApplication.shared.applicationState == .active ||
+                        LivePictureInPictureController.shared.isActive ||
+                        LiveGroupPictureInPictureController.shared.isActive ||
+                        RecordedViewingRegistry.hasPictureInPicture else { continue }
+                do {
+                    try await client.verifySession(force: true, expectedUsername: self.profile?.username)
+                } catch {
+                    guard self.api === client else { return }
+                    self.recordConnectionFailure(error, generation: self.connectionGeneration)
+                }
+            }
+        }
     }
 
     func disconnect(skippingPushCleanup: Bool = false) async -> Bool {
@@ -183,6 +231,8 @@ final class AppModel: ObservableObject {
         }
         try push.abandonForLogout()
         try SessionVault.clear()
+        sessionMaintenance?.cancel(); sessionMaintenance = nil
+        expiryVerification?.cancel(); expiryVerification = nil
         LivePictureInPictureController.shared.stop()
         LiveGroupPictureInPictureController.shared.stop()
         RecordedViewingRegistry.stopAll()
@@ -326,6 +376,7 @@ final class AppModel: ObservableObject {
     }
 
     private func beginConnectionAttempt() -> UUID {
+        expiryVerification?.cancel(); expiryVerification = nil
         connectionGeneration = UUID()
         isConnecting = true
         isRefreshing = false
@@ -344,6 +395,7 @@ final class AppModel: ObservableObject {
 
     private func activate(_ client: HorizonAPI, generation: UUID,
                           expectedUsername: String? = nil) async throws {
+        try await client.verifySession(force: true, expectedUsername: expectedUsername ?? (api === client ? profile?.username : nil))
         async let config: HorizonConfiguration = client.get(["config"])
         async let profile: UserProfile = client.get(["profile"])
         let (newConfig, newProfile) = try await (config, profile)
@@ -370,7 +422,9 @@ final class AppModel: ObservableObject {
         try persistProfiles(library)
         configuration = newConfig
         self.profile = newProfile
+        let changedClient = api !== client
         api = client
+        if changedClient { startSessionMaintenance(using: client) }
         serverText = client.address.url.absoluteString
         savedServerAddress = serverText
         lastConnectionCheck = Date()

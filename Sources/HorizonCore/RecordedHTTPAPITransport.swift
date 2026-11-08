@@ -59,12 +59,14 @@ public protocol RecordedHTTPControlClient: Sendable {
     var cookies: [HTTPCookie] { get }
     var mediaConfiguration: URLSessionConfiguration { get }
     var decoderCapabilities: RecordedHTTPDecoderCapabilities { get }
+    func mediaCookies() async throws -> [HTTPCookie]
     func request(_ url: URL, method: String, body: Data?, success: Set<Int>) async throws -> RecordedHTTPControlResponse
 }
 
 public extension RecordedHTTPControlClient {
     var mediaConfiguration: URLSessionConfiguration { .ephemeral }
     var decoderCapabilities: RecordedHTTPDecoderCapabilities { .baseline }
+    func mediaCookies() async throws -> [HTTPCookie] { cookies }
 }
 
 public actor RecordedHTTPAPITransport: RecordedHTTPTransport {
@@ -192,7 +194,8 @@ public actor RecordedHTTPAPITransport: RecordedHTTPTransport {
             throw RecordedHTTPError.rangeUnsupported
         }
         let reader = try AuthenticatedRecordedMP4Reader(mediaURL: url, verificationLength: length,
-            policy: policy, cookies: client.cookies, configuration: client.mediaConfiguration)
+            policy: policy, cookies: client.cookies, configuration: client.mediaConfiguration,
+            cookieProvider: { [client] in try await client.mediaCookies() })
         defer { reader.close() }
         let fastStart = try await RecordedMP4Faststart.verifyIndex(reader: reader, allowTail: owned.delivery == .originalFile)
         let confirmed = try await client.request(url, method: "HEAD", body: nil, success: [200])
