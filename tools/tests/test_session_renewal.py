@@ -41,6 +41,9 @@ class TestSessionRenewal(unittest.TestCase):
         self.assertIn("UIApplication.shared.applicationState == .active", model)
         self.assertIn("RecordedViewingRegistry.hasPictureInPicture", model)
         self.assertIn(".horizonSessionCookiesChanged", source("App/HorizonApp.swift"))
+        api = source("App/Networking/HorizonAPI.swift")
+        self.assertIn("let changed = lastNotifiedSession != saved", api)
+        self.assertIn("guard changed else { return }", api)
 
     def test_media_401_only_prompts_after_account_verification_and_403_is_not_expiry(self):
         view = source("App/Views/LiveView.swift")

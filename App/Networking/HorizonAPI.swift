@@ -28,6 +28,8 @@ final class HorizonAPI {
     let address: ServerAddress
     let session: URLSession
     private let renewal: SessionRenewalCoordinator
+    private let cookieNotificationLock = NSLock()
+    private var lastNotifiedSession: SavedSession?
     private var viewingUsername: String?
     private(set) var viewingAccountKey: String?
     func bindViewingAccount(username: String) throws {
@@ -71,6 +73,12 @@ final class HorizonAPI {
         if before != after { notifySessionCookiesChanged() }
     }
     private func notifySessionCookiesChanged() {
+        let saved = SavedSession(server: address.url.absoluteString, cookies: cookies.map(SavedSession.SavedCookie.init))
+        cookieNotificationLock.lock()
+        let changed = lastNotifiedSession != saved
+        if changed { lastNotifiedSession = saved }
+        cookieNotificationLock.unlock()
+        guard changed else { return }
         Task { @MainActor in NotificationCenter.default.post(name: .horizonSessionCookiesChanged, object: self) }
     }
 
