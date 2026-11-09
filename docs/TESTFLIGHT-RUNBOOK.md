@@ -1,5 +1,9 @@
 # TestFlight publishing runbook for agents
 
+Moving to another workstation or agent? Start with
+[NEW-COMPUTER-HANDOFF.md](NEW-COMPUTER-HANDOFF.md) for the verified source versus
+delivered-build distinction, secure signing migration and uncommitted files.
+
 **Current source: live WebRTC plus capability-gated recorded HTTPS MP4
 architecture.** The owner subsequently explicitly requested TestFlight;
 **1039** is now uploaded, processed and available to Owner Testing Auto, with
