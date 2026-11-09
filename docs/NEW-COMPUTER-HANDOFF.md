@@ -269,6 +269,38 @@ signing logs. Detailed setup: [TESTFLIGHT-RUNBOOK.md](TESTFLIGHT-RUNBOOK.md).
 
 ## 7. Signing migration: no secrets in Git or chat
 
+### Encrypted local migration package created
+
+At the owner's explicit request, **all 10 files** in the old local iOS Signing
+directory were backed up on 2026-11-09, including the owner-selected other-app
+profiles. Portable standard **7-Zip AES-256 with encrypted filenames**:
+
+```text
+C:\code\Frigate-Horizon-iPhone-Public\signing-backup\
+  ios-signing-20261109T145957Z.7z
+  RESTORE.md
+```
+
+Archive size: **17,136 bytes**. SHA-256:
+`2FD3D2F294B84E782325F114088EB41F67ED12093992A2717BAA8426E5D3A00B`.
+Full integrity, exact membership, encrypted metadata, wrong-password rejection/
+hidden filenames and unchanged source hashes were verified. Originals remain
+in place; no signing identities or GitHub secrets were changed.
+
+**Copy this package separately before retiring the old PC.** It is deliberately
+uncommitted and locally excluded through `.git\info\exclude`; a new clone does
+not include it or inherit that exclusion. Do not force-add it to this public
+repository. The destination directory has owner/SYSTEM-only Windows ACLs;
+reapply private permissions after migration. Extract outside Git, not into
+the source checkout. `RESTORE.md` beside the archive has the restore steps.
+
+The archive password was entered only in a local masked prompt and **not
+saved**. Preserve it in the owner's password manager, separately from the
+encrypted file. The existing P12 export password remains independent and must
+also be retained. No password, archive bytes or private key content belongs in
+chat, source control or the handoff. This package is password-portable, not
+bound to the old machine's DPAPI.
+
 **Existing GitHub secrets survive the computer move.** A fresh clone with
 authorized workflow/environment access can build/upload without a local P12
 or API key. Don't recreate certificates/profiles/keys or overwrite valid
